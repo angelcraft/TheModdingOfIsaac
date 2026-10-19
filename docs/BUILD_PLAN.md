@@ -1,39 +1,50 @@
 # Build plan
 
 ## Milestone 0 — environment and target identity
-- [ ] Record Atmosphère, firmware, Hekate and EmuMMC setup (only versions relevant to compatibility).
-- [ ] Identify launched title and target NRO from the user's own update dump.
-- [ ] Compute SHA-256, NRO ModuleId/build ID and section layout.
-- [ ] Keep AB+ and Repentance variants as separate named targets.
+- [x] Record console/CFW basics: Switch OLED, Atmosphère + Hekate, EmuMMC.
+- [x] User confirms Repentance DLC installed and enabled; choose Repentance as the primary research target.
+- [ ] Identify the exact launched title/NRO on device rather than infer from the update archive.
+- [ ] Recalculate SHA-256, NRO ModuleId/build ID and section layout from the exact Repentance NRO.
+- [ ] Keep AB+ and Repentance targets, resource trees and reports separate.
 
-## Milestone 1 — standalone Lua
-- [ ] Select and pin a Lua 5.1 source/port compatible with devkitPro/libnx.
-- [ ] Build minimal NRO which loads `/switch/TheModdingOfIsaac/test.lua` or a project-specific SD path.
-- [ ] Print a visible "Lua OK" marker and append stdout/results to a log.
-- [ ] Test a syntax error, missing file, and simple table/callback script.
-- [ ] No Isaac process injection/hook in this milestone.
+## Milestone 1A — host-side Lua logic
+- [x] Add isolated callback core and mock Specialist trigger test.
+- [x] Add tests for irrelevant pickups, a single start, same-pedestal deduplication, removal/new-room stop, and callback errors.
+- [ ] Run tests under Lua 5.1 in GitHub Actions.
+- [ ] Add syntax-error/missing-file cases to the later runtime smoke test.
+
+## Milestone 1B — standalone Lua Switch runtime
+- [x] Pin the Lua 5.1.5 Switch-port commit used by CI.
+- [x] Add a libnx NRO that loads `/switch/TheModdingOfIsaac/test.lua`, prints errors/success, and has a bounded script read.
+- [x] Add CI workflow to compile the NRO and package the SD layout.
+- [ ] Confirm CI host tests pass.
+- [ ] Confirm Switch NRO build passes and obtain artifact.
+- [ ] Test `Lua OK`, missing script, syntax error, and callback script on the user's Switch.
+- [ ] No Isaac process access in this milestone.
 
 ## Milestone 2 — host integration feasibility
-- [ ] Research supported homebrew/overlay/sysmodule approaches and what process-memory access they can actually provide on this setup.
-- [ ] Select an approach based on documented facilities, not assumed symbol offsets.
-- [ ] Inspect target NRO's ELF-like segments/ModuleId and disassemble functions around validated references.
-- [ ] Use read-only instrumentation first; no costume/music/entity mutation.
+- [x] Research Atmosphère's official NRO IPS/IPS32 patch path.
+- [ ] Verify the exact game NRO loading path and calculate the matching NRO Build ID.
+- [ ] Re-inspect Repentance `RunModScripts` and `RunModScript` from raw bytes and disassembly; symbol size alone is not proof of a stub.
+- [ ] Assess the safest supported means of running native code in the game process without assuming overlay/sysmodule process-memory permissions.
+- [ ] Select an approach based on observed loader behavior, exact build identity and reversible host-side tests.
+- [ ] No game-state mutation until a read-only probe is validated.
 
 ## Milestone 3 — minimal Isaac API bridge
-- [ ] Read current room entity list safely.
-- [ ] Detect a collectible pickup by type, variant and subtype.
-- [ ] Dispatch a Lua callback on a verified game update path.
-- [ ] Keep the bridge disabled if target build ID differs or validation fails.
+- [ ] Read current room entity list safely for the exact Repentance build.
+- [ ] Detect collectible pickup by verified type, variant and subtype.
+- [ ] Dispatch a Lua callback on a verified update path.
+- [ ] Fail closed if target build ID differs or any validation fails.
 
 ## Milestone 4 — Specialist subset
-- [ ] Map the mod's item IDs for the exact target game/DLC.
-- [ ] Add costume/animation operations.
-- [ ] Add music play/restore operations.
-- [ ] Verify repeated pickup/room transition/removal cases.
-- [ ] Add compatibility table and docs.
+- [ ] Verify Repentance item IDs for the configured Specialist list; do not copy AB+ IDs blindly.
+- [ ] Add costume/animation registration.
+- [ ] Add music play/restore.
+- [ ] Verify repeated pickup, reroll, pedestal removal and room transition cases.
+- [ ] Maintain separate compatibility tables for Repentance and AB+.
 
 ## Acceptance and safety
-- [ ] A clean boot works without the mod loader.
-- [ ] Removing one folder/file fully disables the experiment.
-- [ ] Test logs include exact target build ID.
-- [ ] No patch described as tested until the user confirms actual device test.
+- [ ] Clean game boot works with all experimental files removed.
+- [ ] Removing one experimental patchset/folder fully disables the integration.
+- [ ] Tests/logs include exact target Build ID.
+- [ ] No patch called tested until actually built and device-tested.
