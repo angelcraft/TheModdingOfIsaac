@@ -10,9 +10,10 @@ A separate branch `poc/isolated-lua-runtime` now contains:
 - an isolated mock Specialist trigger with host-side tests,
 - source for a standalone Lua 5.1 Switch NRO,
 - a CI workflow to run host tests and build/package that NRO,
-- target-specific Repentance integration notes.
+- target-specific Repentance integration notes,
+- a static source review of the actual Repentance Workshop ZIP ([report](poc/docs/SPECIALIST_REPENTANCE_SOURCE_REVIEW.md)), without uploading its third-party assets.
 
-The NRO and tests are not yet confirmed passing on hardware. This work does not patch Isaac.
+GitHub Actions passed the host tests and built the standalone NRO; the user reports that it displayed Lua OK on Switch. This confirms only standalone Lua execution, not Isaac compatibility. This work does not patch Isaac.
 
 ## Target selection
 

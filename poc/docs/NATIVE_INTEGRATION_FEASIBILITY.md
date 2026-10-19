@@ -44,7 +44,7 @@ For `Entity_Pickup::Update()` at `0x26C9B8`, the Ghidra reference inventory reco
 
 ### REA route in this session
 
-REA `rea-agents 6.7.0` is connected, but the current `binary_session` has no open target. Its Windows Ghidra route lists ARM64 PE and explicitly selected raw 6502 support; raw AArch64 NRO is outside that admitted set. The existing NRO analysis was performed directly with Ghidra, so no additional analyzer installation is needed.
+REA `rea-agents 6.7.0` was connected and used to inspect the Workshop ZIP inventory. REA's artifact inventory route handled that archive; it is not a native disassembler for the raw NRO. Its Windows Ghidra provider admits ARM64 PE and explicitly selected raw 6502 targets, but not raw AArch64 NROs. The earlier NRO analysis was performed directly with Ghidra 12.1.4; no additional analyzer installation is needed.
 
 The exact supplied file identity is SHA-256 `cc363208c220f65547edda6d8268b3b6c0f7373b14c91ae6ffb378018de4b66a`, Build ID `91C73FDD575061318D68886316AFEAC72388B2AB`. This still does not prove the console is loading the same build. No patch was produced.
 
@@ -102,4 +102,4 @@ If a version check fails, the bridge must refuse to run. Rollback must remain as
 
 ## Current status
 
-The two uploaded binaries have passed basic identity/header checks, and the immediate-return bytes described above were confirmed by direct inspection. The standalone Lua Switch POC is still separate from Isaac; CI previously showed its jobs queued, and this is not yet a verified hardware build. No Isaac IPS patch has been generated or installed.
+The two supplied binaries passed basic identity/header checks, and the immediate-return bytes described above were confirmed by direct inspection. GitHub Actions run 39301289065 passed the host Lua tests and standalone NRO build; the user reports that the standalone NRO displayed Lua OK on Switch. This is not an Isaac mod test. No Isaac IPS patch has been generated or installed.

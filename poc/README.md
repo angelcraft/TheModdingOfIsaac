@@ -25,7 +25,7 @@ Requires Lua 5.1+ installed on the development PC. From this directory, run:
 lua tests/run.lua
 ```
 
-The host tests have not been confirmed passing yet. Static inspection is not a passing runtime test.
+GitHub Actions run 39301289065 passed the host Lua tests and standalone NRO build. The user reports that the standalone NRO displayed Lua OK on Switch. This verifies only the isolated runtime; it does not verify Isaac integration.
 
 Passing these tests means only that the isolated logic behaves as specified on a host Lua runtime and that the NRO preflight rejects malformed synthetic headers. It does **not** prove the Switch Lua port builds, an NRO launches, code runs inside Isaac, entity values are mapped correctly, or animation/music works.
 
@@ -40,6 +40,6 @@ The `--expect` check succeeds only for the exact reference hash plus matching he
 
 ## Standalone Switch runtime smoke test
 
-The current NRO experiment uses a pinned Lua 5.1 Switch port to establish a standalone Lua execution path on homebrew. It is intentionally separate from Isaac. A successful build or `Lua OK` message will not demonstrate mod compatibility.
+The current NRO experiment uses a pinned Lua 5.1 Switch port to establish a standalone Lua execution path on homebrew. It is intentionally separate from Isaac. The reported Lua OK message does not demonstrate mod compatibility.
 
-For broader vanilla Repentance mod compatibility, the project must evaluate a Lua 5.3 runtime baseline and implement the game's API/callback bridge. See `docs/STEAM_MOD_COMPATIBILITY.md`. No game process access is part of this milestone.
+The Repentance source review is in `docs/SPECIALIST_REPENTANCE_SOURCE_REVIEW.md`. For broader mod compatibility, the project must evaluate a Lua 5.3 runtime baseline and implement the game's API/callback bridge. See `docs/STEAM_MOD_COMPATIBILITY.md`. No game process access is part of this milestone.

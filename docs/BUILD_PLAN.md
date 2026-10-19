@@ -10,22 +10,23 @@
 ## Milestone 1A — host-side Lua logic
 - [x] Add isolated callback core and mock Specialist trigger test.
 - [x] Add tests for irrelevant pickups, a single start, same-pedestal deduplication, removal/new-room stop, and callback errors.
-- [ ] Run tests under Lua 5.1 in GitHub Actions.
+- [x] Run tests under Lua 5.1 in GitHub Actions.
 - [ ] Add syntax-error/missing-file cases to the later runtime smoke test.
 
 ## Milestone 1B — standalone Lua Switch runtime
 - [x] Pin the Lua 5.1.5 Switch-port commit used by CI.
 - [x] Add a libnx NRO that loads `/switch/TheModdingOfIsaac/test.lua`, prints errors/success, and has a bounded script read.
 - [x] Add CI workflow to compile the NRO and package the SD layout.
-- [ ] Confirm CI host tests pass.
-- [ ] Confirm Switch NRO build passes and obtain artifact.
-- [ ] Test `Lua OK`, missing script, syntax error, and callback script on the user's Switch.
+- [x] Confirm CI host tests pass.
+- [x] Confirm Switch NRO build passes and obtain artifact.
+- [x] Confirm on Switch that the standalone runtime prints Lua OK.
+- [ ] Test missing script, syntax error, and callback script on the user's Switch.
 - [ ] No Isaac process access in this milestone.
 
 ## Milestone 2 — host integration feasibility
 - [x] Research Atmosphère's official NRO IPS/IPS32 patch path.
 - [ ] Verify the exact game NRO loading path and calculate the matching NRO Build ID.
-- [ ] Re-inspect Repentance `RunModScripts` and `RunModScript` from raw bytes and disassembly; symbol size alone is not proof of a stub.
+- [x] Re-inspect Repentance `RunModScripts` and `RunModScript` from raw bytes and disassembly; both inspected entries return immediately.
 - [ ] Assess the safest supported means of running native code in the game process without assuming overlay/sysmodule process-memory permissions.
 - [ ] Select an approach based on observed loader behavior, exact build identity and reversible host-side tests.
 - [ ] No game-state mutation until a read-only probe is validated.
@@ -37,7 +38,7 @@
 - [ ] Fail closed if target build ID differs or any validation fails.
 
 ## Milestone 4 — Specialist subset
-- [ ] Verify Repentance item IDs for the configured Specialist list; do not copy AB+ IDs blindly.
+- [ ] Verify Repentance item IDs and item-quality behavior against the supplied Specialist source; do not copy AB+ IDs blindly.
 - [ ] Add costume/animation registration.
 - [ ] Add music play/restore.
 - [ ] Verify repeated pickup, reroll, pedestal removal and room transition cases.
