@@ -1,0 +1,76 @@
+name: Lua Switch POC
+
+on:
+  push:
+    branches: [poc/isolated-lua-runtime]
+    paths:
+      - "poc/**"
+      - ".github/workflows/lua-switch-poc.yml"
+  pull_request:
+    branches: [poc/isolated-lua-runtime]
+    paths:
+      - "poc/**"
+      - ".github/workflows/lua-switch-poc.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    name: Host Lua 5.1 tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+      - name: Run isolated Specialist logic tests
+        working-directory: poc
+        run: lua5.1 tests/run.lua
+
+  switch-nro:
+    name: Build standalone Switch NRO
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:20260219
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Check toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          test -f "$DEVKITPRO/libnx/switch_rules"
+          test -x "$DEVKITPRO/devkitA64/bin/aarch64-none-elf-gcc"
+          "$DEVKITPRO/devkitA64/bin/aarch64-none-elf-gcc" --version | head -n 1
+      - name: Fetch pinned Lua 5.1 Switch port
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p poc/switch-nro/third_party
+          git clone https://github.com/carstene1ns/lua51-switch.git poc/switch-nro/third_party/lua51-switch
+          git -C poc/switch-nro/third_party/lua51-switch checkout b1406bb55375787b3559bd1981020541c95a2bee
+          make -C poc/switch-nro/third_party/lua51-switch
+          test -s poc/switch-nro/third_party/lua51-switch/src/liblua.a
+      - name: Build NRO
+        run: make -C poc/switch-nro
+      - name: Package test files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/switch/TheModdingOfIsaac
+          cp poc/switch-nro/TheModdingOfIsaacLuaPOC.nro dist/switch/
+          cp poc/test.lua dist/switch/TheModdingOfIsaac/test.lua
+          cp poc/switch-nro/README.md dist/README.txt
+          (cd dist && zip -r ../TheModdingOfIsaac_Lua_Switch_POC_0.1.zip switch README.txt)
+      - name: Upload Switch POC
+        uses: actions/upload-artifact@v4
+        with:
+          name: TheModdingOfIsaac-Lua-Switch-POC
+          path: TheModdingOfIsaac_Lua_Switch_POC_0.1.zip
+          if-no-files-found: error
+          retention-days: 14
