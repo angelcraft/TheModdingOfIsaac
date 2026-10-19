@@ -35,6 +35,10 @@ LIMIT: simulation only; no Isaac API or game integration.
 
 SD-card layout and the download workflow are documented in `switch-nro/README.md`.
 
+## Specialist source preparation
+
+`tools/prepare_specialist_lua51.py` creates a guarded Lua 5.1 source candidate from the supplied Specialist 1.5.2 mod tree. It preserves the original `main.lua` and records the remaining integration requirements. The generated folder is still source preparation only; it is not loaded by Isaac. See `docs/SPECIALIST_LUA51_PREPARATION.md`.
+
 ## Integration status
 
 A Switch-side pass checks that the source-derived mock logic runs under the pinned Lua 5.1 Switch runtime. It still cannot prove real Isaac entity mapping, callbacks, graphics, music, or game integration. The exact target build, native call flow, ABI and a safe integration route must be verified before creating a game patch.
