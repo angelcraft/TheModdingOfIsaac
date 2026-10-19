@@ -4,59 +4,77 @@ Last updated: 2026-10-19
 
 ## Current state
 - Repository created by the user: https://github.com/angelcraft/TheModdingOfIsaac
-- README project baseline added by assistant.
-- Nintendo Switch OLED running Atmosphère/Hekate with EmuMMC.
-- User says game launches normally after removing all experimental patch/resource files.
-- Do not reuse or install previous native POC/diagnostic ZIPs. Both crashed on the user's console.
-- No working mod loader and no verified native hook exists yet.
+- Nintendo Switch OLED, Atmosphère + Hekate, EmuMMC.
+- User confirms Repentance DLC is installed and enabled. **Repentance is now the primary research target**; Afterbirth+ is kept as a separate compatibility target.
+- User reports Isaac launches normally after removing the previous experimental patch/resource files.
+- Do not reuse or install the prior native POC/diagnostic ZIPs. Those caused crashes.
+- No working Lua loader inside Isaac and no verified native hook exists yet.
+- New branch: `poc/isolated-lua-runtime`; includes a host-side Specialist trigger simulation, tests, a standalone Switch Lua NRO source/build workflow, and Repentance integration notes.
+- GitHub Actions workflow run #1 is queued as of this status snapshot; the host tests and Switch build have not yet been reported passing.
 
-## The actual goal
-Build a reusable Lua mod loader/compatibility layer for The Binding of Isaac on Nintendo Switch, ideally eventually run PC Lua mods such as Specialist. Focus first on a standalone Lua 5.1 runtime test, then study how to safely integrate with Isaac. Lua execution and Isaac's modding API are separate problems; don't imply the standalone runtime provides the API.
+## Goal and architecture boundary
+Build a reusable Lua mod loader/compatibility layer for The Binding of Isaac on Nintendo Switch, eventually supporting the Specialist dance mod when a qualifying collectible is on a pedestal before pickup.
 
-## Known supplied material
-The user uploaded an update dump archive in the previous conversation:
-`The Binding of Isaac_ Afterbirth+ 1.7.9b [010021C000B6A800][v524288][UPD].zip` (~511 MB compressed).
-Earlier inspection reported:
-- `Program #0/1/.nro/AfterbirthPlus.nro`
-- `Program #0/1/.nro/Repentance.nro`
-- `Program #0/1/resources/animations.b`
-- `Program #0/1/rp_patch/resources/animations.b`
-- `resources/costumes2.xml`, `resources/music.xml`
-- `animations.b` ~7,066,833 bytes; matching SHA was reported for root and rp_patch copies.
+Keep the layers distinct:
+1. A Lua VM loads/executes scripts.
+2. A native game bridge provides verified entity snapshots and dispatches callbacks.
+3. An Isaac compatibility shim exposes a small, deliberate subset of the PC mod API.
+4. Specialist-specific animation, costume, and music behavior is a separate phase.
 
-These are notes from prior work, not independently revalidated in this repository. In a new chat, don't assume the 511 MB dump is mounted: ask the user to attach it again only if byte-level work requires it. Prefer working from small outputs (NRO hashes/build IDs, section map, disassembly slices, symbols, extracted XML/animation samples) to avoid repeatedly sending the whole dump.
+A standalone interpreter does **not** imply in-game execution or provide the Isaac API.
 
-## Title IDs noted earlier
+## Known source package and targets
+Earlier work inspected the update archive:
+`The Binding of Isaac_ Afterbirth+ 1.7.9b [010021C000B6A800][v524288][UPD].zip`.
+The continuity package includes symbol CSVs for both candidate NROs, not the NRO binaries themselves.
+
+### Primary: Repentance
+- Candidate: `Program #0/1/.nro/Repentance.nro`
+- Reported size: 11,210,752 bytes
+- Reported SHA-256: `cc363208c220f65547edda6d8268b3b6c0f7373b14c91ae6ffb378018de4b66a`
+- Resource layer: `Program #0/1/rp_patch/resources/`
+- The user confirms DLC installation/enabling; the exact file hash/build ID loaded by the console still needs confirmation.
+
+### Separate target: Afterbirth+
+- Candidate: `Program #0/1/.nro/AfterbirthPlus.nro`
+- Reported size: 8,523,776 bytes
+- Reported SHA-256: `705402b213072f67b561d011302c315448f47a16b9187b15b8823e003f6ccdad`
+- Resource layer: `Program #0/1/resources/`
+
+These size/hash values are from a prior read-only report and have not been recalculated from the binary in this session. Before byte-level integration work, obtain the exact Repentance NRO, hash it, inspect its header/ModuleId/build ID, and remap its sections. Do not mix its addresses or resource IDs with the Afterbirth+ variant.
+
+Other IDs noted earlier:
 - Base: `010021C000B6A000`
 - Update: `010021C000B6A800`
 - Repentance DLC title: `010021C000B6B001`
 
-Important: Almond Milk is a Repentance item, not base AB+ content. Confirm exactly which executable/game/DLC the user launches before making item-ID or offset assumptions. Don't mix AB+ and Repentance resource trees or NRO offsets.
+## Repentance native research leads
+The continuity package includes `REPENTANCE_SYMBOLS.csv` with 17,249 symbol entries. It records:
+- `ModManager::RunModScripts()`: size 4 bytes.
+- `ModManager::RunModScript(string&)`: size 8 bytes.
+- `Entity_Pickup::Update()`: size 11,860 bytes.
+- Costume and music methods are present.
 
-## Source mod references
-- Specialist AB+: https://github.com/D00NIK/Specialistabp
-- External Item Descriptions: https://github.com/wofsauge/External-Item-Descriptions
-- Switch Lua 5.1 port reference: https://github.com/carstene1ns/lua51-switch
-- Conversion kit reference: https://github.com/ItsDeidara/The-Binding-of-Isaac-Mod-Conversion-Kit
+Function size alone does not prove a stub or safe hook. The raw machine instructions for the Repentance NRO are missing from the continuity package, so these are leads only. Verify bytes, disassembly, offsets, ABI, displaced instructions, branches, registers, stack and return path afresh. Do not reuse offsets or patch bytes from earlier attempts.
 
-The Specialist Lua source uses Isaac callbacks, scans room entities in `MC_POST_UPDATE`, detects collectible pickups/pedestals by subtype, applies a null costume, and plays/restores music. It needs the game's Lua API, not just a generic Lua VM.
+Atmosphère's official `ro` documentation describes NRO IPS/IPS32 patching at `/atmosphere/nro_patches/<patchset>/<nro build id>.ips`. This is a possible patch-delivery mechanism, not an integration solution. Confirm the real loading path and exact Build ID before considering it.
 
-## Prior failures to learn from
-- Resource-only ZIPs that associated Specialist's animation with Crown of Light/Almond Milk did not cause the dance. They did not implement pedestal detection or original Lua callbacks.
-- One experimental native hook and one attempted passthrough diagnostic both crashed the user's game. User then removed all test files and confirmed Isaac launches normally.
-- Do not reuse previous IPS bytes, offsets, trampolines or claimed symbol addresses without re-disassembling the exact target NRO and independently validating file offsets vs mapped offsets, IPS patch offsets, hook ABI, displaced instructions, branch ranges, register/stack state, and return path. Previous claims about offsets were unreliable.
-- Don't tell the user a patch has been "validated" from checking only ZIP structure/XML when it hasn't been executed on device.
+## Previous failures and lessons
+- Loose animation/resource ZIPs did not trigger the dance because Specialist's callbacks and game API were not present.
+- Prior native hook and diagnostic patch both crashed the game and were removed.
+- Do not label anything tested/working/install-ready based on static checks.
+- The current POC has not yet been run on the Switch and does not access Isaac.
 
-## Recommended roadmap
-1. Establish project build/test scaffolding on PC and define exact target NRO version/build ID.
-2. Obtain/inspect Lua 5.1 Switch port and identify build requirements, without hooking Isaac yet.
-3. Build a standalone NRO/homebrew proof of concept that reads `test.lua` from SD and logs output to a file/screen. This proves Lua VM works in the Switch environment only.
-4. Separately research supported techniques to run code inside the game process. Assess system-module/overlay/accessibility/API limitations before writing patches.
-5. Find a minimal non-invasive game-host probe; don't mutate game state initially.
-6. Only after validated host integration, define a tiny API: room entities, pickup variant/subtype, callbacks, read-only diagnostics.
-7. Add tested animation/costume/music operations and then Specialist compatibility.
+## Next milestones
+1. Execute the isolated host Lua tests via CI.
+2. Compile the standalone Lua 5.1.5 Switch NRO and obtain the CI artifact.
+3. Verify the NRO on the user's Switch with only `test.lua` mounted separately from Isaac.
+4. Obtain and re-inspect the exact Repentance NRO bytes; verify ModuleId/build ID and whether Atmosphère's NRO patcher sees the game module.
+5. Perform one minimal, reversible, read-only native probe with fail-closed build identity checks.
+6. Snapshot room entities, identify collectible pedestals, and verify the predicate before any game-state change.
+7. Implement the minimal Specialist compatibility behavior and separately validate resource/costume/music loading.
 
-## Rules
-- Keep game dumps, NROs, keys, and proprietary game assets out of GitHub; keep the repo private while scope is unsettled.
-- All experiments must be reversible; no installable patch until host-side tests and byte-level verification succeed.
-- Never conflate "Lua interprets script", "script is injected into Isaac", and "the Isaac API exists".
+## Safety rules
+- Keep game dumps/NROs and proprietary game assets out of GitHub.
+- Preserve backups and keep all experiments reversible.
+- No installable game patch until source bytes, mapping and host tests are verified; no claim of success until device test.
