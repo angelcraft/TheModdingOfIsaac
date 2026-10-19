@@ -31,6 +31,18 @@ Symbol values from the prior symbol inventory were checked directly against the 
 
 A scan for the literal strings `lua_State`, `luaL_newstate`, `lua_pcall`, `RegisterMod`, `ModCallbacks`, `AddCallback`, and `.lua` found no matches in either NRO. This scan is heuristic: missing strings alone does not prove no Lua implementation exists anywhere. The immediate-return instructions, however, directly confirm that these particular mod-script entry points do not do the expected work in the inspected binaries.
 
+### Completed Ghidra reference pass — Repentance (2026-10-19)
+
+The supplied Repentance NRO was imported directly into Ghidra 12.1.4 as raw AArch64 little-endian. Automatic analysis completed successfully; Ghidra logged non-fatal invalid-PNG and register-context warnings.
+
+- The completed static reference inventory reports no incoming code or data references to `RunModScripts` at `0x421838` or `RunModScript` at `0x42183C`.
+- An independent instruction scan also found no direct AArch64 `B`/`BL` branches to those addresses.
+- This makes both entries unsuitable as assumed hooks in this build. The result is limited to references resolved by this static analysis; dynamic dispatch or unresolved computed references remain possible.
+- The analysis did resolve ordinary data references to selected functions such as `Room::PlayMusic` and `Entity_Pickup::Update`, but that alone does not establish their ABI, call context, or suitability as hooks.
+
+The exact supplied file identity is SHA-256 `cc363208c220f65547edda6d8268b3b6c0f7373b14c91ae6ffb378018de4b66a`, Build ID `91C73FDD575061318D68886316AFEAC72388B2AB`. This still does not prove the console is loading the same build. No patch was produced.
+
+
 **Consequence:** copying Workshop mods to the SD card will not by itself enable them. We need a native integration path, a Lua runtime, and an Isaac-API compatibility bridge. None of those is proven by the standalone Lua NRO POC.
 
 ## Positive native engine leads in Repentance
