@@ -7,7 +7,7 @@ Experimental research project to investigate a Lua mod loader and modding compat
 **Research/POC only — no working Lua loader inside Isaac exists yet.** Earlier experimental IPS/NRO patches caused crashes and were removed. The user reports that Isaac launches normally again.
 
 A separate branch `poc/isolated-lua-runtime` now contains:
-- an isolated mock Specialist trigger with host-side tests,
+- a source-derived mock Specialist trigger model with host-side tests,
 - source for a standalone Lua 5.1 Switch NRO,
 - a CI workflow to run host tests and build/package that NRO,
 - target-specific Repentance integration notes,

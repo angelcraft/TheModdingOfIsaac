@@ -23,6 +23,12 @@
 - [ ] Test missing script, syntax error, and callback script on the user's Switch.
 - [ ] No Isaac process access in this milestone.
 
+## Milestone 1C — Repentance source-derived predicate
+- [x] Translate the source's default quality threshold and custom item overrides into the mock probe.
+- [x] Model Curse of the Blind and alt-path treasure-room visibility inputs.
+- [x] Track pedestal identity/subtype and stop/restart on removal or reroll.
+- [ ] Map normalized mock inputs to verified values from the exact Switch build.
+
 ## Milestone 2 — host integration feasibility
 - [x] Research Atmosphère's official NRO IPS/IPS32 patch path.
 - [ ] Verify the exact game NRO loading path and calculate the matching NRO Build ID.

@@ -30,7 +30,7 @@ A compatible host must provide more than a Lua VM. The inspected source uses:
 - Repentance enumerations for player types, collectible IDs, pickup variants, rooms, stages and callbacks.
 - JSON persistence; optional Mod Config Menu support.
 
-The source uses Lua 5.3 integer division (//) and bitwise AND (&). The current standalone Switch NRO is Lua 5.1, so it cannot parse this main.lua unchanged. A Lua 5.3-compatible runtime needs to be selected or the source deliberately translated with equivalent semantics.
+The source uses Lua 5.3 integer division (//) and bitwise AND (&). The current standalone Switch NRO is Lua 5.1, so it cannot parse this main.lua unchanged. A Lua 5.3-compatible runtime needs to be selected or the source deliberately translated with equivalent semantics. The source's IgnoreQuality setting gates the quality comparison with IgnoreQuality=false; enabling it therefore disables ordinary quality-based triggers while explicit value-1 item entries still trigger.
 
 ## Porting notes
 
@@ -44,4 +44,4 @@ The source uses Lua 5.3 integer division (//) and bitwise AND (&). The current s
 
 This is static source analysis only. It does not prove that a Switch loader exists, that a native hook is safe, or that the mod works on the console. The existing Lua OK result validates a standalone homebrew Lua smoke test only.
 
-The next implementation step is to port the trigger predicate into the isolated host-side prototype, retaining the same quality/list/visibility rules while making pedestal identity explicit. Do not create an Isaac patch until the target NRO build identity, native call flow, ABI and a reversible read-only integration point are verified.
+The source-derived trigger predicate is now modeled in the isolated host-side probe at poc/mods/specialist_probe.lua. It remains a mock with no Isaac access. The next step is mapping its normalized inputs to an exact, verified read-only game observation path. Do not create an Isaac patch until the target NRO build identity, native call flow, ABI and a reversible read-only integration point are verified.

@@ -1,79 +1,61 @@
 # Specialist API contract
 
-**Status:** source-derived design contract for the isolated Lua POC. This document does not implement Isaac APIs or establish compatibility with a game build.
+**Status:** The source-derived trigger predicate is implemented in the isolated mock probe. This is not an Isaac API implementation or a Switch game mod.
 
 ## Scope and evidence
 
-The selected target is [The Specialist for Good Items, Steam Workshop ID 2575911103](https://steamcommunity.com/sharedfiles/filedetails/?id=2575911103), whose official listing identifies Repentance as its required DLC. The listing/changelog describe tainted-character support and configurable dance/music behavior, but the original target's Lua source and resource bundle have not yet been acquired or inspected.
+The target is [The Specialist for Good Items, Workshop ID 2575911103](https://steamcommunity.com/sharedfiles/filedetails/?id=2575911103), version 1.5.2. The user supplied ZIP SHA-256 is FE4F89C4108E9977F98AB77A0C85C223CBD198B2F9F0CF87012DD7D39CE04CA7. The archive and source inventory are documented in [SPECIALIST_REPENTANCE_SOURCE_REVIEW.md](SPECIALIST_REPENTANCE_SOURCE_REVIEW.md).
 
-The available [SpecialistABP source](https://github.com/D00NIK/Specialistabp/blob/main/main.lua) is a separate Afterbirth+ adaptation (Workshop ID 3231114249); its author warns against using it with Repentance. The source-facing API inventory and source-review findings below apply only to that AB+ adaptation. They are not verified implementation details of Workshop ID 2575911103. The POC’s [mock-host probe](../mods/specialist_probe.lua) is also separate: it is a deterministic logic simulation, not the Isaac Lua API or an in-game port.
+Workshop ID 3231114249 and the public [SpecialistABP adaptation](https://github.com/D00NIK/Specialistabp) are a separate Afterbirth+ target. They are not used as evidence for the Repentance source rules described here.
 
-## AB+ source-facing surface
+## Repentance source-facing API surface
 
-| Concern | Calls and behavior used by the reference mod | Evidence status |
+| Concern | Calls used by the supplied main.lua | Status for this project |
 |---|---|---|
-| Mod registration and lifecycle | `RegisterMod`, `mod:AddCallback`, `MC_POST_UPDATE`, `MC_POST_NEW_ROOM` | Present in source; target callback semantics still need validation. |
-| Game and room access | `Game()`, current room, room entity enumeration | Present in source; Switch object layout and entity values are unverified. |
-| Pickup detection | Pickup entity type and collectible variant, nonzero `SubType`, and an item allowlist | The source predicate is visible; exact target constants and timing are unknown. |
-| Character costume | Character/player type mapping, `Isaac.GetCostumeIdByPath`, `Player:AddNullCostume`, `Player:TryRemoveNullCostume` | Calls are visible; availability, arguments, return behavior, and resource resolution must be checked on the selected build. |
-| Music | `Isaac.GetMusicIdByName`, `MusicManager()`, and room music restoration | Calls are visible; ordering, ownership, and restoration behavior are unverified. |
-| Content files | Costume/animation and music resources referenced by the mod | Requires a separate resource-path and packaging check. |
+| Mod registration and lifecycle | RegisterMod, AddCallback, MC_PRE_GAME_EXIT, MC_POST_GAME_STARTED, MC_POST_UPDATE, MC_POST_NEW_ROOM, MC_USE_ITEM, MC_USE_CARD | Static source evidence only; no Switch dispatcher exists. |
+| Pickup and item data | Isaac.FindInRadius, Isaac.GetItemConfig, GetCollectible, pickup variant/subtype, item name and quality | The mock accepts normalized values; Switch values and entity layout are unverified. |
+| Character and costumes | PlayerType mapping, Isaac.GetCostumeIdByPath, AddNullCostume, TryRemoveNullCostume, GetCollectibleNum | Not implemented in the mock or verified on Switch. |
+| Blind and stage rules | GetCurses, GetStageType, room type and entity positions | Mock inputs are source-derived; game constants and values are not mapped. |
+| Music and persistence | Isaac.GetMusicIdByName, MusicManager, room music restore, SaveData/LoadData, JSON | Not implemented in the mock. |
+| Optional configuration | Mod Config Menu settings and per-item customization | Mock consumes normalized settings; the MCM itself is not implemented. |
 
-This table is a research checklist, not a promise that these globals, methods, constants, or callbacks exist in Repentance on Switch.
+The POC's room_update, new_room, host actions, normalized entity strings and IDs remain internal test vocabulary. They do not claim to be Isaac callback names or native values.
 
-## AB+ source review findings
+## Modeled source behavior
 
-The public source is explicitly Afterbirth+ only; its README says not to use it with Repentance. These are source-derived findings, not Switch runtime observations:
+The mock probe now models the source's trigger rules:
 
-- `ClearItemList` fills numeric slots, but the pickup path calls `table.insert(mod.items, v.SubType, true)`. That inserts and shifts later entries; the Repentance adaptation should use a keyed set such as `seen[subtype] = true`.
-- The active-dance scan matches pickup type and subtype but omits pickup variant and instance identity. The adapter should retain a stable identity for the exact pedestal that triggered the animation.
-- Both room scans stop at `#itemsNearby - 1` based on an upstream crash comment. Confirm the target container's indexing and bounds before choosing a loop limit.
-- The allowlist comes from the AB+ source and must be rebuilt or verified against the selected Repentance target.
+1. Accept only collectible pickup entities with a positive subtype, stable entity identity, and a numeric item quality.
+2. Block Curse of the Blind unless BlindBypass is enabled.
+3. In an alt-path treasure room with collectible pedestals, apply the source position rule: for two items, x must be at most 320 and y at most 280; for more than two, x must be at most 320 and the exact point (320, 280) is excluded.
+4. The source default quality threshold is four. An explicit custom item value of 1 triggers regardless of quality; value 2 vetoes; otherwise the quality threshold path runs only when IgnoreQuality is false.
+5. The default custom list contains Cricket's Head, Magic Mushroom, Sacred Heart and Brimstone.
+6. Track entity identity and subtype, stop when the pedestal disappears or changes, and allow a changed subtype to be considered again. Clear per-room history on new_room.
 
-## Behavioral contract for the POC
+The source's IgnoreQuality label can be misread: in main.lua the quality comparison is gated by IgnoreQuality == false, so enabling that setting disables ordinary quality-based triggers while explicit value-1 entries still work. The mock preserves the code's observed behavior.
 
-The isolated probe uses only the mock host API documented in its source. Its current contract is:
+## Implemented versus unresolved
 
-1. On a room-update event, inspect the provided entity snapshot.
-2. Select at most one previously unseen entity whose mock type is `pickup`, mock variant is `collectible`, subtype is nonzero, and subtype is in the supplied qualifying-item set.
-3. Emit `specialist_start` for that entity with timing marked `before_pickup`.
-4. If the active entity disappears from a later snapshot, emit `specialist_stop` with reason `pedestal_removed_or_picked_up`.
-5. On a new-room event, stop any active entity and clear the per-room seen set.
+Implemented only in the deterministic host mock:
 
-The probe’s `room_update`, `new_room`, `entity_id`, `host:on`, and `host:emit_action` names are POC abstractions. An adapter must map them to verified game callbacks and stable entity identity; no mapping to Isaac has been implemented or proven.
+- Source-derived quality threshold and custom-list decision.
+- Blind-curse and alt-path visibility conditions.
+- Stable identity/subtype tracking, removal cleanup and reroll handling.
+- Lua 5.1-compatible translation of this predicate.
 
-## Intended adapter boundary
+Still unresolved:
 
-Keep the eventual integration split into three layers:
+- The Switch build's exact runtime identity and actual game loading path.
+- A verified native call flow, ABI, callback lifecycle and room/entity snapshot.
+- Mapping player, item, room, stage, pickup, curse and callback values for the exact build.
+- Lua 5.3 compatibility for the full original source, which uses // and & operators.
+- Costumes, animation resources, music registration/playback and persistence.
+- MCM support, character edge cases, and end-to-end behavior in Isaac.
 
-- **Lua runtime:** loads a controlled mod folder and dispatches callbacks.
-- **Game adapter:** exposes only the verified room/entity snapshot and narrowly scoped actions needed by a compatibility target.
-- **Mod compatibility layer:** maps source-facing mod APIs onto that adapter and reports unavailable APIs instead of silently fabricating behavior.
+The existing game NRO analysis found the inspected script-runner entries at 0x421838 and 0x42183C are immediate-return stubs. The standalone Lua OK NRO is a separate homebrew program and does not load this predicate inside Isaac.
 
-For the first Specialist slice, expose room and qualifying-pickup observations only. Add one costume action only after observation and callback timing are validated. Add resource loading, music changes, and cleanup last. The POC’s action names are internal test vocabulary and are not the names of an Isaac API.
+## Safety and acceptance
 
-## Unresolved before claiming compatibility
+The mock code does not read or write game memory and is not packaged as an installable mod. A real bridge must remain disabled when the exact target build does not match. Do not create or install a native patch until the target build identity and native call flow/ABI are verified.
 
-- Original target bundle for Workshop ID 2575911103, including its exact Lua source, metadata and resources.
-- Exact game title, NRO build ID, and file identity for the build being tested.
-- Lua language/runtime baseline and actual loader entry point for that build.
-- Callback registration, argument shape, ordering, and room-transition behavior.
-- Entity type/variant/subtype values and a stable way to track pickup instances.
-- Costume API and resource-path behavior, including player/character edge cases.
-- Music lookup, playback, interruption, and restoration behavior.
-- Mod metadata and content packaging rules on the selected game.
-- Repeat-run, continue, room-transition, and failure-cleanup behavior.
-
-The source contains an entity-loop boundary quirk that skips the final element in one scan. Treat that as an upstream implementation detail to investigate; do not encode it as intended compatibility behavior without runtime evidence.
-
-## Acceptance sequence
-
-1. Record and verify the exact target build identity before any build-specific work.
-2. Validate a read-only room/entity observation path and callback timing.
-3. Confirm the qualifying-pickup predicate against observed values.
-4. Verify the lifecycle and deduplication behavior with deterministic host-side cases.
-5. Validate one reversible costume action and cleanup.
-6. Validate resource loading and music only after the earlier steps pass.
-7. Report unsupported API calls and dependencies explicitly; do not mark the whole mod compatible from script parsing alone.
-
-No binary patch, NRO, or installation package is produced by this contract. Do not create or install a native patch until both target build identity and native call flow/ABI have been verified, as required by the project’s safety gate.
+After those gates pass, validate read-only entity observation and callback timing first; only then add one reversible costume operation, resource loading, music and cleanup. Source parsing or host mock checks alone must never be described as Switch compatibility.

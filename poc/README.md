@@ -9,7 +9,7 @@ When a *new* qualifying collectible pedestal is observed, emit one `specialist_s
 ## Files
 
 - `source/loader_core.lua`: small callback registry with protected dispatch.
-- `mods/specialist_probe.lua`: Specialist-style test mod consuming only the mock host API.
+- `mods/specialist_probe.lua`: source-derived Specialist trigger model consuming only the mock host API; it does not call Isaac.
 - `tests/run.lua`: deterministic host-side tests.
 - `test.lua`: tiny script intended for the later standalone Switch-runtime milestone.
 - `docs/ARCHITECTURE.md`: strict separation between VM, host bridge, and Isaac behavior.
@@ -42,4 +42,4 @@ The `--expect` check succeeds only for the exact reference hash plus matching he
 
 The current NRO experiment uses a pinned Lua 5.1 Switch port to establish a standalone Lua execution path on homebrew. It is intentionally separate from Isaac. The reported Lua OK message does not demonstrate mod compatibility.
 
-The Repentance source review is in `docs/SPECIALIST_REPENTANCE_SOURCE_REVIEW.md`. For broader mod compatibility, the project must evaluate a Lua 5.3 runtime baseline and implement the game's API/callback bridge. See `docs/STEAM_MOD_COMPATIBILITY.md`. No game process access is part of this milestone.
+The Repentance source review is in `docs/SPECIALIST_REPENTANCE_SOURCE_REVIEW.md`, and `docs/SPECIALIST_API_CONTRACT.md` separates the modeled trigger from unresolved Isaac APIs. For broader mod compatibility, the project must evaluate a Lua 5.3 runtime baseline and implement the game's API/callback bridge. See `docs/STEAM_MOD_COMPATIBILITY.md`. No game process access is part of this milestone.

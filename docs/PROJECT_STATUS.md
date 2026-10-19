@@ -9,8 +9,8 @@ Last updated: 2026-10-19
 - Repentance DLC is installed and enabled. **Repentance is the primary research target**; Afterbirth+ remains a separate compatibility target.
 - Isaac currently launches normally after the previous experimental patch/resource files were removed.
 - Branch: `poc/isolated-lua-runtime`.
-- The branch now contains a host-side Specialist trigger simulation, Lua tests, a standalone Switch Lua NRO source/build workflow, a read-only NRO identity preflight tool, and an explicit Steam Workshop compatibility roadmap.
-- The user supplied the exact Repentance Workshop ZIP for ID 2575911103. Its metadata matches the target at version 1.5.2; its complete inventory and source findings are recorded in [SPECIALIST_REPENTANCE_SOURCE_REVIEW.md](../poc/docs/SPECIALIST_REPENTANCE_SOURCE_REVIEW.md).
+- The branch now contains a source-derived Specialist trigger model in the mock host, Lua tests, a standalone Switch Lua NRO source/build workflow, a read-only NRO identity preflight tool, and an explicit Steam Workshop compatibility roadmap. The model does not call Isaac.
+- The user supplied the exact Repentance Workshop ZIP for ID 2575911103. Its metadata matches the target at version 1.5.2; its complete inventory and source findings are recorded in [SPECIALIST_REPENTANCE_SOURCE_REVIEW.md](../poc/docs/SPECIALIST_REPENTANCE_SOURCE_REVIEW.md). The source-derived trigger model is tracked separately in [SPECIALIST_API_CONTRACT.md](../poc/docs/SPECIALIST_API_CONTRACT.md).
 - Both requested NRO files have now been inspected in this session. They match the earlier recorded sizes and SHA-256 hashes.
 - The inspected script-runner entry points in both binaries are immediate-return stubs. No installable Isaac patch has been generated.
 - GitHub Actions run [39300360076](https://github.com/angelcraft/TheModdingOfIsaac/actions/runs/39300360076) completed successfully: host Lua tests and the standalone Switch NRO build both passed. The run produced the `TheModdingOfIsaac-Lua-Switch-POC` ZIP artifact (expires 2026-11-02). This is only a standalone Lua 5.1 homebrew smoke test, not an Isaac mod or game patch.
