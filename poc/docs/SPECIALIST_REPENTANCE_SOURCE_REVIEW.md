@@ -8,7 +8,7 @@ Updated: 2026-10-19
 - Supplied archive metadata: name matches the Workshop target, directory specialistforgooditems, version 1.5.2.
 - Archive SHA-256: FE4F89C4108E9977F98AB77A0C85C223CBD198B2F9F0CF87012DD7D39CE04CA7.
 - REA performed a static ZIP inventory. The complete central-directory inventory contains 112 entries: 101 files and 11 directories, with no symlinks and no integrity contradictions.
-- The archive includes main.lua (28,928 bytes; 807 lines), metadata.xml, costumes2.xml, music.xml, 42 ANM2 files, 43 PNG files and six OGG files.
+- The archive includes main.lua (28,928 bytes; 806 numbered source lines in the extracted copy), metadata.xml, costumes2.xml, music.xml, 42 ANM2 files, 43 PNG files and six OGG files.
 - Only metadata and source behavior were reviewed. The ZIP, Lua code, or assets were not executed, and the third-party assets/source bundle were not uploaded to GitHub.
 
 ## Behavior described by main.lua
@@ -40,6 +40,15 @@ The source uses Lua 5.3 integer division (//) and bitwise AND (&). The current s
 - In the public SpecialistModAPI helper, addAnimation's non-override branch reads danceCostumes[playerType] instead of checking the passed table/type. playerType is not declared in that helper's scope, so this appears to be a source defect; confirm intended registration semantics before reproducing it.
 - The Workshop source does not solve native integration. The inspected Repentance mod-script entries at 0x421838 and 0x42183C remain immediate-return stubs in the supplied NRO analysis.
 
+## Additional exact-source findings from the supplied ZIP
+
+- `SpecialistModAPI:RemoveDanceCostume()` and `RemoveItemCostume()` delegate to `removeAnimation()`, which deletes the table entry but returns no value. The nearby API comments promise a boolean result. The Switch-facing compatibility contract should choose and test an explicit return value rather than silently preserving nil.
+- `DoCostume(false)` removes an item-specific costume only while the player still owns that collectible. If an item is lost while its costume is active, the current source path skips that removal; verify this cleanup behavior before porting the costume lifecycle.
+- `DoCostume()` loops from player index 1 through `GetNumPlayers()`. Repentance's PC API documentation describes player IDs as zero-based and says an invalid ID falls back to player zero. The source therefore relies on that fallback to include player zero; a port should enumerate 0 through count minus one explicitly and avoid depending on fallback behavior. [Game:GetPlayer documentation](https://wofsauge.github.io/IsaacDocs/rep/Game.html) and [Isaac.GetPlayer documentation](https://wofsauge.github.io/IsaacDocs/rep/Isaac.html).
+- The source's `IgnoreQuality` option is explicitly described as ignoring quality, but the ordinary quality trigger requires `IgnoreQuality == false` at `main.lua:702`. Setting it to true disables that trigger; only explicit allow-list entries still trigger. This is a confirmed source-level logic mismatch, not a Switch compatibility finding.
+
+These are static source observations from the supplied 1.5.2 ZIP. They do not establish how the original mod behaves at runtime or which fixes are safe without an in-game test.
+ 
 ## Scope and next safe step
 
 This is static source analysis only. It does not prove that a Switch loader exists, that a native hook is safe, or that the mod works on the console. The existing Lua OK result validates a standalone homebrew Lua smoke test only.
