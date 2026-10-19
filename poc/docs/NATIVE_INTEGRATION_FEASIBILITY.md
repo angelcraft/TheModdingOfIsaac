@@ -40,6 +40,12 @@ The supplied Repentance NRO was imported directly into Ghidra 12.1.4 as raw AArc
 - This makes both entries unsuitable as assumed hooks in this build. The result is limited to references resolved by this static analysis; dynamic dispatch or unresolved computed references remain possible.
 - The analysis did resolve ordinary data references to selected functions such as `Room::PlayMusic` and `Entity_Pickup::Update`, but that alone does not establish their ABI, call context, or suitability as hooks.
 
+For `Entity_Pickup::Update()` at `0x26C9B8`, the Ghidra reference inventory records one incoming `DATA` reference from `0x787D48`. This is a pointer/data reference, not a direct call. It is consistent with a function-pointer slot, but the table owner and dispatch call are still unresolved; it does not establish a safe hook.
+
+### REA route in this session
+
+REA `rea-agents 6.7.0` is connected, but the current `binary_session` has no open target. Its Windows Ghidra route lists ARM64 PE and explicitly selected raw 6502 support; raw AArch64 NRO is outside that admitted set. The existing NRO analysis was performed directly with Ghidra, so no additional analyzer installation is needed.
+
 The exact supplied file identity is SHA-256 `cc363208c220f65547edda6d8268b3b6c0f7373b14c91ae6ffb378018de4b66a`, Build ID `91C73FDD575061318D68886316AFEAC72388B2AB`. This still does not prove the console is loading the same build. No patch was produced.
 
 
