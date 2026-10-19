@@ -4,48 +4,45 @@ Experimental research project to investigate a Lua mod loader and modding compat
 
 ## Status
 
-**Research only — no working Lua loader exists yet.** Do not install experimental IPS/NRO patches from earlier prototypes; they caused crashes and were removed. Current Switch installation has been cleaned and the game launches normally again.
+**Research/POC only — no working Lua loader inside Isaac exists yet.** Earlier experimental IPS/NRO patches caused crashes and were removed. The user reports that Isaac launches normally again.
 
-## Goals
+A separate branch `poc/isolated-lua-runtime` now contains:
+- an isolated mock Specialist trigger with host-side tests,
+- source for a standalone Lua 5.1 Switch NRO,
+- a CI workflow to run host tests and build/package that NRO,
+- target-specific Repentance integration notes.
 
-1. Establish a safe, isolated Lua runtime proof of concept on Switch.
-2. Identify a supported integration point with the exact Isaac executable build.
-3. Design a minimal host bridge for read-only room/pedestal detection.
-4. Expand carefully toward costume/animation/music APIs and a Specialist compatibility layer.
-5. Keep all tests reversible, version-specific, and validated before SD installation.
+The NRO and tests are not yet confirmed passing on hardware. This work does not patch Isaac.
 
-## Known environment
+## Target selection
 
-- Console: Nintendo Switch OLED
-- CFW: Atmosphère + Hekate, using EmuMMC
-- Game/dump provided in prior conversation: The Binding of Isaac: Afterbirth+ update 1.7.9b
-- Title IDs previously noted:
-  - Base: `010021C000B6A000`
-  - Update: `010021C000B6A800`
-  - Repentance DLC title: `010021C000B6B001`
-- Relevant user goal: load Lua scripts and eventually support the Specialist dance mod when a qualifying item is present on a pedestal, before pickup.
+The user confirmed the Repentance DLC is installed and enabled. **Repentance is the primary research target**; Afterbirth+ remains a separate compatibility target.
 
-**Important version warning:** Almond Milk belongs to Repentance, not base Afterbirth+. Do not mix resource paths or executable offsets between AB+ and Repentance. Confirm the actual launched executable/title/update and DLC state before researching offsets.
+The previously analysed update archive included:
+- `Program #0/1/.nro/AfterbirthPlus.nro`
+- `Program #0/1/.nro/Repentance.nro`
+- `Program #0/1/resources/` (Afterbirth+ resources)
+- `Program #0/1/rp_patch/resources/` (Repentance resource layer)
 
-## Prior findings (unverified until independently rechecked)
+Prior reported file hashes/section notes are leads; re-hash and inspect the exact Repentance NRO before byte-level work. Never mix NRO offsets, resource IDs or item IDs across versions.
 
-- The PC mod `D00NIK/Specialistabp` uses Isaac's Lua callbacks and APIs. The relevant source is `main.lua`; it scans room entities in `MC_POST_UPDATE`, detects collectible pickups by subtype, applies a null costume and plays music.
-- Switch's vanilla port does not expose the PC modding Lua API as-is. A standalone Lua interpreter alone would not provide Isaac's object/event APIs.
-- The update dump contained `Program #0/1/.nro/AfterbirthPlus.nro`, `Program #0/1/.nro/Repentance.nro`, `resources/animations.b`, and `rp_patch/resources/animations.b`.
-- Prior experiments attempted loose ANM2/resources and native IPS/NRO hooks. They did not make the character dance; an experimental native hook and a passthrough diagnostic both crashed the game. All test patches/resources were removed and Isaac launches normally.
-- Previous discussion suggested candidate native symbols such as pickup update, player costume, and music routines. Treat all offsets, file offset assumptions, function signatures, and hook designs as **untrusted leads** until checked against the exact NRO, build ID, architecture/disassembly, and loader implementation.
-- Atmosphère supports an NRO IPS patch mechanism at `atmosphere/nro_patches`; investigate its actual conventions from Atmosphère source and the exact version before generating any patch.
-- Public reference repositories mentioned:
-  - https://github.com/D00NIK/Specialistabp
-  - https://github.com/wofsauge/External-Item-Descriptions
-  - https://github.com/carstene1ns/lua51-switch
-  - https://github.com/ItsDeidara/The-Binding-of-Isaac-Mod-Conversion-Kit
+## Architecture boundary
 
-## Safety rules for the project
+1. **Lua VM:** reads/executes Lua scripts and reports errors.
+2. **Native game bridge:** must independently provide verified, preferably read-only room/pedestal data.
+3. **Isaac compatibility API:** must implement only the callbacks/globals the chosen mod actually uses.
+4. **Specialist behavior:** costume/animation and music/resource management.
 
-- Never call a package "working", "validated on Switch", or "install-ready" without evidence.
-- Do not write/recommend a native patch until instruction addresses, hook ABI, displaced instructions, return path, executable build ID and patcher offsets have all been independently verified.
-- Start with host-side tools/tests and a non-invasive loader POC; no patch on the SD for the first steps.
-- Preserve backups. Do not overwrite user mods or original game resources.
-- Keep game dumps, private keys, proprietary assets and other copyrighted game files out of this public repository. This repository is private for now.
-- Report unknowns plainly. First milestone is to run `test.lua` in an isolated runtime, not to claim a full Isaac Lua mod loader.
+A standalone Lua runtime does not include the game's `Game()`, `Isaac`, `EntityType`, `PickupVariant`, `ModCallbacks`, `MusicManager()`, or resource registration API.
+
+## References
+
+- Specialist AB+: https://github.com/D00NIK/Specialistabp
+- Lua 5.1.5 Switch port: https://github.com/carstene1ns/lua51-switch
+- Atmosphère official NRO patching documentation: https://github.com/Atmosphere-NX/Atmosphere/blob/master/docs/components/modules/ro.md
+
+## Safety
+- Never install previous diagnostic/native POC ZIPs or reuse their bytes/offsets.
+- No native patch until raw executable bytes, section mapping, Build ID, ABI, displaced instructions, branch/return behavior and loader path are checked.
+- Keep game dumps and proprietary assets out of GitHub; keep tests separate and reversible.
+- Do not describe static inspection as runtime validation.
