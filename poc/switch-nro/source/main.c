@@ -84,13 +84,15 @@ int main(int argc, char **argv) {
         lua_close(state);
     }
 
+    PadState pad;
+    padInitializeDefault(&pad);
     printf("\nPress PLUS to exit.\n");
     while (appletMainLoop()) {
-        hidScanInput();
-        if (hidKeysDown(CONTROLLER_P1_AUTO) & KEY_PLUS) break;
+        padUpdate(&pad);
+        if (padGetButtonsDown(&pad) & HidNpadButton_Plus) break;
         consoleUpdate(NULL);
     }
 
-    consoleExit();
+    consoleExit(NULL);
     return 0;
 }
