@@ -40,7 +40,7 @@ The supplied Repentance NRO was imported directly into Ghidra 12.1.4 as raw AArc
 - This makes both entries unsuitable as assumed hooks in this build. The result is limited to references resolved by this static analysis; dynamic dispatch or unresolved computed references remain possible.
 - The analysis did resolve ordinary data references to selected functions such as `Room::PlayMusic` and `Entity_Pickup::Update`, but that alone does not establish their ABI, call context, or suitability as hooks.
 
-For `Entity_Pickup::Update()` at `0x26C9B8`, the Ghidra reference inventory records one incoming `DATA` reference from `0x787D48`. This is a pointer/data reference, not a direct call. It is consistent with a function-pointer slot, but the table owner and dispatch call are still unresolved; it does not establish a safe hook.
+For `Entity_Pickup::Update()` at `0x26C9B8`, the Ghidra reference inventory records one incoming `DATA` reference from `0x787D48`, not a direct call. Direct bytes at `0x787D48` contain `0x26C9B8`; the next qword at `0x787D50` is `0x2E54`, matching the 11,860-byte function body reported by Ghidra. Nearby values repeat a metadata/address/size-like pattern. A bounded scan of the raw code found no references into `0x787000..0x787FFF` through direct `ADR`, `ADRP` followed by `ADD`, or `LDR literal` address materialization. This is more consistent with a function-range metadata record than a vtable, but the exact data structure is unknown. The scan does not cover every computed or indirect access. This DATA edge is not evidence of a runtime dispatcher or safe hook.
 
 ### REA route in this session
 
