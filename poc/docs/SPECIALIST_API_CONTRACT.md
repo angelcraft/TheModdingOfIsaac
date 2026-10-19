@@ -4,11 +4,11 @@
 
 ## Scope and evidence
 
-SpecialistABP is an Afterbirth+ mod. Its author warns against using it with Repentance, so this code is a behavioral reference for the project’s Repentance-first compatibility work, not a Repentance-ready mod.
+The selected target is [The Specialist for Good Items, Steam Workshop ID 2575911103](https://steamcommunity.com/sharedfiles/filedetails/?id=2575911103), whose official listing identifies Repentance as its required DLC. The listing/changelog describe tainted-character support and configurable dance/music behavior, but the original target's Lua source and resource bundle have not yet been acquired or inspected.
 
-This contract is based on the public [SpecialistABP source](https://github.com/D00NIK/Specialistabp/blob/main/main.lua) and the POC’s [mock-host probe](../mods/specialist_probe.lua). Source inspection describes code, not verified in-game behavior. The POC host API is deliberately a mock and must not be presented as the Isaac Lua API.
+The available [SpecialistABP source](https://github.com/D00NIK/Specialistabp/blob/main/main.lua) is a separate Afterbirth+ adaptation (Workshop ID 3231114249); its author warns against using it with Repentance. The source-facing API inventory and source-review findings below apply only to that AB+ adaptation. They are not verified implementation details of Workshop ID 2575911103. The POC’s [mock-host probe](../mods/specialist_probe.lua) is also separate: it is a deterministic logic simulation, not the Isaac Lua API or an in-game port.
 
-## Source-facing surface
+## AB+ source-facing surface
 
 | Concern | Calls and behavior used by the reference mod | Evidence status |
 |---|---|---|
@@ -21,7 +21,7 @@ This contract is based on the public [SpecialistABP source](https://github.com/D
 
 This table is a research checklist, not a promise that these globals, methods, constants, or callbacks exist in Repentance on Switch.
 
-## Source review findings
+## AB+ source review findings
 
 The public source is explicitly Afterbirth+ only; its README says not to use it with Repentance. These are source-derived findings, not Switch runtime observations:
 
@@ -54,6 +54,7 @@ For the first Specialist slice, expose room and qualifying-pickup observations o
 
 ## Unresolved before claiming compatibility
 
+- Original target bundle for Workshop ID 2575911103, including its exact Lua source, metadata and resources.
 - Exact game title, NRO build ID, and file identity for the build being tested.
 - Lua language/runtime baseline and actual loader entry point for that build.
 - Callback registration, argument shape, ordering, and room-transition behavior.
