@@ -13,7 +13,7 @@ A separate branch `poc/isolated-lua-runtime` now contains:
 - target-specific Repentance integration notes,
 - a static source review of the actual Repentance Workshop ZIP ([report](poc/docs/SPECIALIST_REPENTANCE_SOURCE_REVIEW.md)), without uploading its third-party assets.
 
-GitHub Actions passed the host tests and built the standalone NRO; the user reports that it displayed Lua OK on Switch. This confirms only standalone Lua execution, not Isaac compatibility. This work does not patch Isaac.
+GitHub Actions passed the host tests and built the standalone Specialist mock-test NRO. A user-provided Switch screenshot confirms all nine mock scenarios and the callback-dispatch check passed on-device. This validates only the standalone Lua runtime and simulated behavior, not Isaac compatibility. This work does not patch Isaac.
 
 ## Target selection
 
