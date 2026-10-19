@@ -15,7 +15,7 @@ The user supplied both files directly. Both parse as NRO0 and the header's decla
 | File | `AfterbirthPlus.nro` | `Repentance.nro` |
 | File size / declared NRO size | 8,523,776 bytes | 11,210,752 bytes |
 | SHA-256 | `705402b213072f67b561d011302c315448f47a16b9187b15b8823e003f6ccdad` | `cc363208c220f65547edda6d8268b3b6c0f7373b14c91ae6ffb378018de4b66a` |
-| NRO build ID from header (first 20 bytes at 0x40) | `0F65948274CE60ECA59C1E55B09C54D0607F3C57` | `91C73FDD575061318D68886316AF EAC72388B2AB` |
+| NRO build ID from header (first 20 bytes at 0x40) | `0F65948274CE60ECA59C1E55B09C54D0607F3C57` | `91C73FDD575061318D68886316AFEAC72388B2AB` |
 
 The Repentance build ID above is written as the 20 header bytes, without the 12 zero padding bytes. A matching header identifies the supplied NRO, not necessarily the exact file loaded at runtime by the user's console; runtime identity still needs confirmation.
 
