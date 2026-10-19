@@ -12,7 +12,7 @@ Last updated: 2026-10-19
 - The branch now contains a host-side Specialist trigger simulation, Lua tests, a standalone Switch Lua NRO source/build workflow, a read-only NRO identity preflight tool, and an explicit Steam Workshop compatibility roadmap.
 - Both requested NRO files have now been inspected in this session. They match the earlier recorded sizes and SHA-256 hashes.
 - The inspected script-runner entry points in both binaries are immediate-return stubs. No installable Isaac patch has been generated.
-- CI has not yet reported a completed pass for the current code. The visible run had the standalone Switch build in progress and host tests queued; do not claim it is built or tested until the results complete.
+- GitHub Actions run [39300360076](https://github.com/angelcraft/TheModdingOfIsaac/actions/runs/39300360076) completed successfully: host Lua tests and the standalone Switch NRO build both passed. The run produced the `TheModdingOfIsaac-Lua-Switch-POC` ZIP artifact (expires 2026-11-02). This is only a standalone Lua 5.1 homebrew smoke test, not an Isaac mod or game patch.
 
 ## Goal and architecture boundary
 
@@ -76,7 +76,8 @@ Detailed report: `poc/docs/NATIVE_INTEGRATION_FEASIBILITY.md`.
 - Simple vanilla Repentance Lua mods are a later target once the VM is integrated and a tested subset of the Isaac API/callbacks exists.
 - Content mods require resource and ID registration in addition to Lua APIs.
 - REPENTOGON-dependent mods and PC-only native/external integrations are out of initial scope and may need separate ports.
-- The public Specialistabp source labels itself AB+ only and explicitly warns against using it with Repentance. Treat its behavior as a reference and port it; do not install it as-is.
+- Selected target: [The Specialist for Good Items, Workshop ID 2575911103](https://steamcommunity.com/sharedfiles/filedetails/?id=2575911103), the Repentance version. Its original Lua source and resource bundle have not yet been obtained for inspection.
+- Workshop ID 3231114249 and the public [SpecialistABP source](https://github.com/D00NIK/Specialistabp) are a separate Afterbirth+ adaptation. Use only as a limited behavioral reference; do not treat it as the target or install it for Repentance.
 - The Repentance modding documentation links Lua 5.3 as the language reference. The current pinned Lua 5.1 Switch port is only a standalone smoke-test candidate; broader compatibility needs a Lua 5.3 evaluation and a native Isaac API bridge.
 
 Roadmap: `poc/docs/STEAM_MOD_COMPATIBILITY.md`.
@@ -90,13 +91,13 @@ Roadmap: `poc/docs/STEAM_MOD_COMPATIBILITY.md`.
 
 ## Next milestones
 
-1. Complete CI host tests and standalone Switch NRO build; do not infer success while jobs remain queued/in progress.
-2. Test the separate Lua NRO with `test.lua`, without patching Isaac.
+1. Obtain the original Repentance Workshop bundle for ID 2575911103 and inventory its Lua code, metadata and resource files.
+2. Test the available standalone Lua NRO with `test.lua`, without patching Isaac; it confirms only homebrew Lua execution.
 3. Confirm the console's actual loaded Repentance NRO identity and whether the loader path goes through Atmosphère's NRO patcher.
-4. Design a tiny reversible native probe that checks the expected build ID and fails closed on a mismatch.
+4. Verify native call flow, ABI and a safe integration route before designing a reversible, build-identity-checked probe.
 5. Expose a read-only room/entity snapshot and validate collectible-pedestal detection.
 6. Add a controlled mod-folder loader and callback dispatcher.
-7. Port Specialist in isolated steps: trigger detection, costume, animation assets, music, cleanup.
+7. Port the actual Repentance Specialist in isolated steps: trigger detection, costume, animation assets, music, cleanup.
 8. Add tiered compatibility checks for more vanilla Workshop mods, starting with resource-only mods and small mods with narrow API dependencies.
 
 ## Safety rules
