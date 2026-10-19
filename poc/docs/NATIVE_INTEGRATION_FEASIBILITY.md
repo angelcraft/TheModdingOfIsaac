@@ -1,52 +1,72 @@
-# Repentance integration feasibility — research only
+# Repentance integration feasibility — binary inspection
 
 Updated: 2026-10-19
 
 ## Selected target
 
-The user confirmed the Repentance DLC is installed and enabled. Repentance is the primary research target; Afterbirth+ remains a separately versioned target. See `REPLICATION_TARGET.md`.
+The user confirmed that the Repentance DLC is installed and enabled. Repentance is the primary research target; Afterbirth+ remains a separately versioned target. Do not copy addresses between binaries.
 
-The continuity ZIP includes `REPENTANCE_SYMBOLS.csv` (17,249 symbols) but **does not include the Repentance NRO bytes**. Its symbol inventory exposes these leads:
+## Supplied NRO files — identity checks
 
-| Symbol | Recorded size | What this tells us |
-|---|---:|---|
-| `IsaacRepentance::ModManager::RunModScripts()` | 4 bytes | Tiny entry point; inspect raw instruction bytes/disassembly before drawing a conclusion. |
-| `IsaacRepentance::ModManager::RunModScript(string&)` | 8 bytes | Tiny entry point; likely important, but size alone does not prove it's a stub. |
-| `IsaacRepentance::Entity_Pickup::Update()` | 11,860 bytes | Candidate gameplay path for later investigation, not an approved hook. |
-| `IsaacRepentance::Entity_Player::AddNullCostume(...)` | 68 bytes | Candidate costume operation; calling convention/object layout still unknown. |
-| `IsaacRepentance::ItemConfig::LoadCostumes(...)` | 3,756 bytes | Candidate costume registration path, not verified for external assets. |
-| `IsaacRepentance::Music::Play(...)` | 28 / 392 bytes | Candidate music operations; signatures and state restoration still need verification. |
+The user supplied both files directly. Both parse as NRO0 and the header's declared image size matches the file length.
 
-Values/offsets from the CSV are leads only. Do not convert them into IPS file offsets or use them to patch the game. We need the exact NRO and must derive the module/build ID, section mapping, instruction bytes, file-offset mapping, calling conventions and return flow afresh.
+| Field | Afterbirth+ | Repentance |
+|---|---:|---:|
+| File | `AfterbirthPlus.nro` | `Repentance.nro` |
+| File size / declared NRO size | 8,523,776 bytes | 11,210,752 bytes |
+| SHA-256 | `705402b213072f67b561d011302c315448f47a16b9187b15b8823e003f6ccdad` | `cc363208c220f65547edda6d8268b3b6c0f7373b14c91ae6ffb378018de4b66a` |
+| NRO build ID from header (first 20 bytes at 0x40) | `0F65948274CE60ECA59C1E55B09C54D0607F3C57` | `91C73FDD575061318D68886316AF EAC72388B2AB` |
 
-## Atmosphère patch-delivery option
+The Repentance build ID above is written as the 20 header bytes, without the 12 zero padding bytes. A matching header identifies the supplied NRO, not necessarily the exact file loaded at runtime by the user's console; runtime identity still needs confirmation.
 
-Official Atmosphère documentation says its `ro` reimplementation can apply IPS or IPS32 patches to an NRO when that NRO is loaded. The convention is:
+## Mod-manager entry points inspected in the raw bytes
+
+Symbol values from the prior symbol inventory were checked directly against the supplied NRO files. They are leads for static research, not a safe patch recipe.
+
+| Target | Symbol value | Size | Raw AArch64 bytes | Initial interpretation |
+|---|---:|---:|---|---|
+| Afterbirth+ `ModManager::RunModScript(std::string&)` | `0x24FA68` | 8 | `E0 03 1F 2A C0 03 5F D6` | `mov w0, wzr; ret` — returns zero immediately |
+| Repentance `IsaacRepentance::ModManager::RunModScripts()` | `0x421838` | 4 | `C0 03 5F D6` | `ret` — returns immediately |
+| Repentance `IsaacRepentance::ModManager::RunModScript(std::string&)` | `0x42183C` | 8 | `E0 03 1F 2A C0 03 5F D6` | `mov w0, wzr; ret` — returns zero immediately |
+
+A scan for the literal strings `lua_State`, `luaL_newstate`, `lua_pcall`, `RegisterMod`, `ModCallbacks`, `AddCallback`, and `.lua` found no matches in either NRO. This scan is heuristic: missing strings alone does not prove no Lua implementation exists anywhere. The immediate-return instructions, however, directly confirm that these particular mod-script entry points do not do the expected work in the inspected binaries.
+
+**Consequence:** copying Workshop mods to the SD card will not by itself enable them. We need a native integration path, a Lua runtime, and an Isaac-API compatibility bridge. None of those is proven by the standalone Lua NRO POC.
+
+## NRO header build IDs and Atmosphère
+
+The official Atmosphère documentation describes NRO IPS/IPS32 patch lookup under:
 
 ```text
 /atmosphere/nro_patches/<patchset name>/<nro build id>.ips
 ```
 
+The 20-byte header IDs listed above are the relevant build-ID candidates for the supplied NROs; verify the console's actual loaded target and loader path before relying on them.
+
 Reference: https://github.com/Atmosphere-NX/Atmosphere/blob/master/docs/components/modules/ro.md
 
-This makes an NRO patch **a possible delivery mechanism**, not an integration solution by itself. It does not automatically provide an extension point for arbitrary new code, allocate a safe executable code cave, embed a Lua VM, or implement Isaac callbacks. First we need to confirm that the exact game binary is loaded via a path where Atmosphère's NRO patcher actually sees it, and compute the correct NRO build ID (SHA-256 alone is not the patch filename).
+Patch delivery is not the same as code injection or API implementation. We have not identified a verified code cave, trampoline, safe executable allocation, or complete call path. Do not generate or install an IPS yet.
 
-## Separate the layers
+## Keep the runtime, bridge, and API separate
 
-1. **Lua VM:** interpret script bytes, report errors, and keep the callback core alive. The new Switch NRO POC is separate from Isaac.
-2. **Game bridge:** acquire read-only room/pickup data from a validated Repentance build. No entity writes during the first instrumentation stage.
-3. **Isaac compatibility API:** only after the bridge works, expose a narrow API and Specialist-specific adapter. A plain Lua VM does not have `Game()`, `Isaac`, `EntityType`, `PickupVariant`, `ModCallbacks`, `MusicManager()`, or costume/music registration.
+1. **Lua VM:** load a script, handle errors and callbacks. The current Switch NRO POC is standalone.
+2. **Game bridge:** connect only after the Repentance code path is verified. Begin with a version marker and read-only room/entity data.
+3. **Isaac compatibility API:** implement only documented calls required by a target mod and validate calling conventions, object lifetime and cleanup.
+
+For broader vanilla Repentance mod compatibility, investigate Lua 5.3 as the language baseline before treating the current Lua 5.1 Switch port as sufficient. See `STEAM_MOD_COMPATIBILITY.md`.
 
 ## Reversible integration gates
 
-- Gate A: compile and run the standalone Lua NRO with `test.lua`; this proves only Lua executes in homebrew.
-- Gate B: inspect the exact Repentance NRO. Verify the reported symbol locations and inspect `RunModScripts`/ `RunModScript` bytes and disassembly; no inherited offsets.
-- Gate C: confirm the NRO loading path and build ID / Atmosphère patch naming.
-- Gate D: use a minimal host-side no-op/read-only probe; don't change costumes or music.
-- Gate E: read-only list of room entities and a verified collectible-pedestal predicate.
-- Gate F: Specialist action layer and asset/resource strategy.
-- Any mismatch in target identity disables the experimental bridge; rollback remains removing the single experimental patchset/folder.
+- Gate A: build and run the standalone Lua NRO with `test.lua`. This proves only Lua executes in homebrew.
+- Gate B: verify actual game identity, NRO build ID, symbol bytes and call flow.
+- Gate C: establish whether Atmosphère's NRO patcher observes the exact loaded binary.
+- Gate D: a reversible native version-marker/no-op probe; no entity writes.
+- Gate E: read-only room/entity snapshot and collectible-pedestal predicate.
+- Gate F: costume/animation/music actions for Specialist, one at a time.
+- Gate G: a controlled mod directory loader plus a small, explicit vanilla API subset.
 
-## Current limitation
+If a version check fails, the bridge must refuse to run. Rollback must remain as simple as removing the single experimental patchset.
 
-The Lua POC CI run is queued. The current environment has no `lua`, `lua5.1`, or `luajit` executable, so its host tests could not be run locally. The Switch NRO has not been built or tested on hardware yet. No Isaac patch has been generated or installed.
+## Current status
+
+The two uploaded binaries have passed basic identity/header checks, and the immediate-return bytes described above were confirmed by direct inspection. The standalone Lua Switch POC is still separate from Isaac; CI previously showed its jobs queued, and this is not yet a verified hardware build. No Isaac IPS patch has been generated or installed.
