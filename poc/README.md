@@ -13,6 +13,8 @@ When a *new* qualifying collectible pedestal is observed, emit one `specialist_s
 - `tests/run.lua`: deterministic host-side tests.
 - `test.lua`: tiny script intended for the later standalone Switch-runtime milestone.
 - `docs/ARCHITECTURE.md`: strict separation between VM, host bridge, and Isaac behavior.
+- `docs/NATIVE_INTEGRATION_FEASIBILITY.md`: verified static findings from the supplied Afterbirth+ and Repentance NROs, including build IDs and the inspected stub entry points.
+- `docs/STEAM_MOD_COMPATIBILITY.md`: compatibility tiers and a roadmap for supporting a selected subset of Steam Workshop mods.
 
 ## Host-side test
 
@@ -22,10 +24,12 @@ Requires Lua 5.1+ installed on the development PC. From this directory, run:
 lua tests/run.lua
 ```
 
-No Lua interpreter is bundled. These tests have **not** been executed here because no Lua 5.1 executable is available in the current environment. ZIP structure and integrity were checked. Static inspection alone is not a passing runtime test.
+The host tests have not been confirmed passing yet. Static inspection is not a passing runtime test.
 
 Passing these tests means only that the isolated logic behaves as specified on a host Lua runtime. It does **not** prove the Switch Lua port builds, an NRO launches, code runs inside Isaac, entity values are mapped correctly, or animation/music works.
 
-## Next milestone
+## Standalone Switch runtime smoke test
 
-Build Lua 5.1.5 using the Switch homebrew toolchain, pin its source commit, then make a separate minimal libnx NRO that loads `/switch/TheModdingOfIsaac/test.lua` from SD and shows/logs `Lua OK`. No game process access in that milestone.
+The current NRO experiment uses a pinned Lua 5.1 Switch port to establish a standalone Lua execution path on homebrew. It is intentionally separate from Isaac. A successful build or `Lua OK` message will not demonstrate mod compatibility.
+
+For broader vanilla Repentance mod compatibility, the project must evaluate a Lua 5.3 runtime baseline and implement the game's API/callback bridge. See `docs/STEAM_MOD_COMPATIBILITY.md`. No game process access is part of this milestone.
