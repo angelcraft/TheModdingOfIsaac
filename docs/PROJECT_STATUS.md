@@ -3,78 +3,105 @@
 Last updated: 2026-10-19
 
 ## Current state
-- Repository created by the user: https://github.com/angelcraft/TheModdingOfIsaac
-- Nintendo Switch OLED, Atmosphère + Hekate, EmuMMC.
-- User confirms Repentance DLC is installed and enabled. **Repentance is now the primary research target**; Afterbirth+ is kept as a separate compatibility target.
-- User reports Isaac launches normally after removing the previous experimental patch/resource files.
-- Do not reuse or install the prior native POC/diagnostic ZIPs. Those caused crashes.
-- No working Lua loader inside Isaac and no verified native hook exists yet.
-- New branch: `poc/isolated-lua-runtime`; includes a host-side Specialist trigger simulation, tests, a standalone Switch Lua NRO source/build workflow, and Repentance integration notes.
-- GitHub Actions workflow run #1 is queued as of this status snapshot; the host tests and Switch build have not yet been reported passing.
+
+- Repository: https://github.com/angelcraft/TheModdingOfIsaac
+- Target setup: Nintendo Switch OLED, Atmosphère + Hekate, EmuMMC.
+- Repentance DLC is installed and enabled. **Repentance is the primary research target**; Afterbirth+ remains a separate compatibility target.
+- Isaac currently launches normally after the previous experimental patch/resource files were removed.
+- Branch: `poc/isolated-lua-runtime`.
+- The branch now contains a host-side Specialist trigger simulation, Lua tests, a standalone Switch Lua NRO source/build workflow, a read-only NRO identity preflight tool, and an explicit Steam Workshop compatibility roadmap.
+- Both requested NRO files have now been inspected in this session. They match the earlier recorded sizes and SHA-256 hashes.
+- The inspected script-runner entry points in both binaries are immediate-return stubs. No installable Isaac patch has been generated.
+- CI has not yet reported a completed pass for the current code. The visible run had the standalone Switch build in progress and host tests queued; do not claim it is built or tested until the results complete.
 
 ## Goal and architecture boundary
-Build a reusable Lua mod loader/compatibility layer for The Binding of Isaac on Nintendo Switch, eventually supporting the Specialist dance mod when a qualifying collectible is on a pedestal before pickup.
+
+Build a reusable Lua mod loader/compatibility layer for The Binding of Isaac on Nintendo Switch. The Specialist dance is the first end-to-end mod; the broader goal is to support a selected subset of vanilla Repentance Steam Workshop mods.
 
 Keep the layers distinct:
-1. A Lua VM loads/executes scripts.
+1. A Lua VM loads and executes scripts.
 2. A native game bridge provides verified entity snapshots and dispatches callbacks.
-3. An Isaac compatibility shim exposes a small, deliberate subset of the PC mod API.
-4. Specialist-specific animation, costume, and music behavior is a separate phase.
+3. An Isaac compatibility shim exposes a deliberately selected subset of the PC mod API.
+4. Specialist-specific animation, costume and music behavior is developed separately.
+5. A compatibility checker identifies missing API features, resource files, version mismatches and mods that require REPENTOGON or PC-only components.
 
 A standalone interpreter does **not** imply in-game execution or provide the Isaac API.
 
-## Known source package and targets
-Earlier work inspected the update archive:
-`The Binding of Isaac_ Afterbirth+ 1.7.9b [010021C000B6A800][v524288][UPD].zip`.
-The continuity package includes symbol CSVs for both candidate NROs, not the NRO binaries themselves.
+## Verified supplied NRO identities
+
+The file hashes and build IDs below were read from the two user-supplied NROs. A matching supplied-file identity does not yet prove which exact binary the console loads at runtime.
 
 ### Primary: Repentance
-- Candidate: `Program #0/1/.nro/Repentance.nro`
-- Reported size: 11,210,752 bytes
-- Reported SHA-256: `cc363208c220f65547edda6d8268b3b6c0f7373b14c91ae6ffb378018de4b66a`
-- Resource layer: `Program #0/1/rp_patch/resources/`
-- The user confirms DLC installation/enabling; the exact file hash/build ID loaded by the console still needs confirmation.
+
+- File: `Repentance.nro`
+- Size and declared NRO size: 11,210,752 bytes
+- SHA-256: `cc363208c220f65547edda6d8268b3b6c0f7373b14c91ae6ffb378018de4b66a`
+- NRO build ID from the header: `91C73FDD575061318D68886316AFEAC72388B2AB`
+- Resource layer noted in the update package: `Program #0/1/rp_patch/resources/`
 
 ### Separate target: Afterbirth+
-- Candidate: `Program #0/1/.nro/AfterbirthPlus.nro`
-- Reported size: 8,523,776 bytes
-- Reported SHA-256: `705402b213072f67b561d011302c315448f47a16b9187b15b8823e003f6ccdad`
-- Resource layer: `Program #0/1/resources/`
 
-These size/hash values are from a prior read-only report and have not been recalculated from the binary in this session. Before byte-level integration work, obtain the exact Repentance NRO, hash it, inspect its header/ModuleId/build ID, and remap its sections. Do not mix its addresses or resource IDs with the Afterbirth+ variant.
+- File: `AfterbirthPlus.nro`
+- Size and declared NRO size: 8,523,776 bytes
+- SHA-256: `705402b213072f67b561d011302c315448f47a16b9187b15b8823e003f6ccdad`
+- NRO build ID from the header: `0F65948274CE60ECA59C1E55B09C54D0607F3C57`
+- Resource layer noted in the update package: `Program #0/1/resources/`
 
-Other IDs noted earlier:
+The build IDs are the first 20 bytes of the NRO header's ID field at offset `0x40`. Do not mix offsets or resource IDs between targets.
+
+Other title IDs noted earlier:
 - Base: `010021C000B6A000`
 - Update: `010021C000B6A800`
 - Repentance DLC title: `010021C000B6B001`
 
-## Repentance native research leads
-The continuity package includes `REPENTANCE_SYMBOLS.csv` with 17,249 symbol entries. It records:
-- `ModManager::RunModScripts()`: size 4 bytes.
-- `ModManager::RunModScript(string&)`: size 8 bytes.
-- `Entity_Pickup::Update()`: size 11,860 bytes.
-- Costume and music methods are present.
+The read-only verifier is `poc/tools/nro_identity.py`. It checks NRO0 magic, declared size, segment bounds, build ID and SHA-256; with `--expect repentance` or `--expect afterbirth-plus`, it fails closed unless the file matches the corresponding exact reference hash and header ID.
 
-Function size alone does not prove a stub or safe hook. The raw machine instructions for the Repentance NRO are missing from the continuity package, so these are leads only. Verify bytes, disassembly, offsets, ABI, displaced instructions, branches, registers, stack and return path afresh. Do not reuse offsets or patch bytes from earlier attempts.
+## Repentance native findings
 
-Atmosphère's official `ro` documentation describes NRO IPS/IPS32 patching at `/atmosphere/nro_patches/<patchset>/<nro build id>.ips`. This is a possible patch-delivery mechanism, not an integration solution. Confirm the real loading path and exact Build ID before considering it.
+The raw instructions at the mod-manager symbol locations were checked directly in the uploaded NRO:
+
+- `IsaacRepentance::ModManager::RunModScripts()` at `0x421838`, size 4: `C0 03 5F D6` (`ret`).
+- `IsaacRepentance::ModManager::RunModScript(std::string&)` at `0x42183C`, size 8: `E0 03 1F 2A C0 03 5F D6` (`mov w0, wzr; ret`).
+- The Afterbirth+ `ModManager::RunModScript(std::string&)` entry at `0x24FA68` similarly contains `mov w0, wzr; ret`.
+
+The supplied Repentance NRO also contains nontrivial native routines for `Entity_Pickup::Update()`, `Entity_Player::AddNullCostume`, `Entity_Player::TryRemoveCostume`, `Music::GetCurrentMusicID()`, `Music::Play()` and `Room::PlayMusic()`. These are research leads, not verified hook points. Their semantics, calling conventions, object layout, frame/thread context and safe integration path still need to be validated before calling them.
+
+A string scan found no matches for selected obvious Lua identifiers (`lua_State`, `luaL_newstate`, `lua_pcall`, `RegisterMod`, `ModCallbacks`, `AddCallback`, `.lua`). This is heuristic; the immediate-return instructions are the direct evidence for the inspected mod-script entry points.
+
+Detailed report: `poc/docs/NATIVE_INTEGRATION_FEASIBILITY.md`.
+
+## Steam Workshop compatibility strategy
+
+- Resource-replacement mods are the best early compatibility target.
+- Simple vanilla Repentance Lua mods are a later target once the VM is integrated and a tested subset of the Isaac API/callbacks exists.
+- Content mods require resource and ID registration in addition to Lua APIs.
+- REPENTOGON-dependent mods and PC-only native/external integrations are out of initial scope and may need separate ports.
+- The public Specialistabp source labels itself AB+ only and explicitly warns against using it with Repentance. Treat its behavior as a reference and port it; do not install it as-is.
+- The Repentance modding documentation links Lua 5.3 as the language reference. The current pinned Lua 5.1 Switch port is only a standalone smoke-test candidate; broader compatibility needs a Lua 5.3 evaluation and a native Isaac API bridge.
+
+Roadmap: `poc/docs/STEAM_MOD_COMPATIBILITY.md`.
 
 ## Previous failures and lessons
-- Loose animation/resource ZIPs did not trigger the dance because Specialist's callbacks and game API were not present.
-- Prior native hook and diagnostic patch both crashed the game and were removed.
-- Do not label anything tested/working/install-ready based on static checks.
-- The current POC has not yet been run on the Switch and does not access Isaac.
+
+- Loose animation/resource ZIPs did not trigger the dance because the logic and game API were not available.
+- Previous native hook/diagnostic attempts crashed the game and were removed.
+- Do not label anything tested, working or install-ready based on static checks.
+- The current POC does not access Isaac and has not yet been confirmed working on Switch hardware.
 
 ## Next milestones
-1. Execute the isolated host Lua tests via CI.
-2. Compile the standalone Lua 5.1.5 Switch NRO and obtain the CI artifact.
-3. Verify the NRO on the user's Switch with only `test.lua` mounted separately from Isaac.
-4. Obtain and re-inspect the exact Repentance NRO bytes; verify ModuleId/build ID and whether Atmosphère's NRO patcher sees the game module.
-5. Perform one minimal, reversible, read-only native probe with fail-closed build identity checks.
-6. Snapshot room entities, identify collectible pedestals, and verify the predicate before any game-state change.
-7. Implement the minimal Specialist compatibility behavior and separately validate resource/costume/music loading.
+
+1. Complete CI host tests and standalone Switch NRO build; do not infer success while jobs remain queued/in progress.
+2. Test the separate Lua NRO with `test.lua`, without patching Isaac.
+3. Confirm the console's actual loaded Repentance NRO identity and whether the loader path goes through Atmosphère's NRO patcher.
+4. Design a tiny reversible native probe that checks the expected build ID and fails closed on a mismatch.
+5. Expose a read-only room/entity snapshot and validate collectible-pedestal detection.
+6. Add a controlled mod-folder loader and callback dispatcher.
+7. Port Specialist in isolated steps: trigger detection, costume, animation assets, music, cleanup.
+8. Add tiered compatibility checks for more vanilla Workshop mods, starting with resource-only mods and small mods with narrow API dependencies.
 
 ## Safety rules
+
 - Keep game dumps/NROs and proprietary game assets out of GitHub.
-- Preserve backups and keep all experiments reversible.
-- No installable game patch until source bytes, mapping and host tests are verified; no claim of success until device test.
+- Preserve backups and make experiments reversible.
+- No installable game patch until the source bytes, mapping, calling conventions and validation are understood.
+- No claim of success until the build and device tests have actually completed.
