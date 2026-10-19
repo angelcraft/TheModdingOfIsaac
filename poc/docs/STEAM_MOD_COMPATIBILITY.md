@@ -34,20 +34,15 @@ Before implementing broad mod support, compare a Lua 5.3 build on devkitA64 with
 
 Reference: https://wofsauge.github.io/IsaacDocs/rep/
 
-## Specialist as the reference mod
+## Selected Repentance target
 
-The public Specialistabp source is specifically labelled AB+ only and warns against using it with Repentance. Treat it as a behavioral reference, not a ready-to-run Repentance mod. Its `main.lua` uses these major features:
+The actual target is [The Specialist for Good Items, Steam Workshop ID 2575911103](https://steamcommunity.com/sharedfiles/filedetails/?id=2575911103). The official listing identifies Repentance as its required DLC. Its description and changelog describe the Specialist dance for quality-4 items, support for tainted and non-tainted characters, configurable quality/Blind-curse/item/music behavior, reduced flashing, and the 1.5.2 `SpecialistModAPI:AddMusicAlias()` extension for custom-character tracks.
 
-- `RegisterMod`, `Game()`, `MC_POST_UPDATE` and `MC_POST_NEW_ROOM`.
-- Room entity enumeration and checks for collectible pickups.
-- Persistent per-run pickup bookkeeping.
-- `Isaac.GetCostumeIdByPath`, `Player:AddNullCostume`, and `TryRemoveNullCostume`.
-- `Isaac.GetMusicIdByName`, `MusicManager()` and room-music restoration.
-- Character-specific costume selection plus animation and music resources.
+These are requirements reported by the Workshop listing and changelog, not details verified from the target's Lua source. The original Repentance Workshop bundle, including its `main.lua` and resources, has not yet been acquired for source inspection.
 
-First implement only read-only discovery of the room and qualifying pickup; next validate one costume action; finally add music and cleanup. This keeps crashes and side effects small while the native bridge is new.
+The separate [SpecialistABP adaptation](https://github.com/D00NIK/Specialistabp) is for Afterbirth+ and corresponds to Workshop ID 3231114249. It is not the selected target and must not be installed as the Repentance mod. Its source can still serve as a limited behavioral reference: its `main.lua` uses `RegisterMod`, `Game()`, `MC_POST_UPDATE`, `MC_POST_NEW_ROOM`, room entity enumeration, collectible-pickup checks, per-run pickup bookkeeping, costume APIs, music lookup/playback, and room-music restoration. Those calls have not been verified against the original Repentance source.
 
-Reference source: https://github.com/D00NIK/Specialistabp
+The current Switch Lua artifact is a standalone Lua 5.1 homebrew smoke test. It does not run inside Isaac and cannot load this mod. A real port still needs the exact original source/assets plus a verified game bridge, callbacks, entity values, resource mapping, and cleanup. The latest official mod changelog is [here](https://steamcommunity.com/sharedfiles/filedetails/changelog/2575911103).
 
 ## Proposed milestone sequence
 
