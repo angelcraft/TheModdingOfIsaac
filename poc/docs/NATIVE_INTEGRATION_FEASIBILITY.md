@@ -33,6 +33,21 @@ A scan for the literal strings `lua_State`, `luaL_newstate`, `lua_pcall`, `Regis
 
 **Consequence:** copying Workshop mods to the SD card will not by itself enable them. We need a native integration path, a Lua runtime, and an Isaac-API compatibility bridge. None of those is proven by the standalone Lua NRO POC.
 
+## Positive native engine leads in Repentance
+
+The same symbol inventory contains nontrivial native routines useful for a staged Specialist port. Their initial instruction bytes were checked against the supplied Repentance NRO:
+
+| Candidate routine | Symbol value | Size | Initial bytes (hex) |
+|---|---:|---:|---|
+| `Entity_Pickup::Update()` | `0x26C9B8` | 11,860 | `EB 2B B8 6D E9 23 01 6D FD 7B 02 A9 FD 83 00 91` |
+| `Entity_Player::AddNullCostume(eNullItemID)` | `0x291BBC` | 68 | `FD 7B BE A9 F3 0B 00 F9 FD 03 00 91 C9 40 00 F0` |
+| `Entity_Player::TryRemoveCostume(eNullItemID)` | `0x2F2170` | 64 | `FD 7B BE A9 F3 0B 00 F9 FD 03 00 91 C9 3D 00 D0` |
+| `Music::GetCurrentMusicID()` | `0x426C38` | 8 | `00 C8 43 B9 C0 03 5F D6` |
+| `Music::Play(eMusic)` | `0x42721C` | 28 | `29 34 00 B0 29 25 43 F9 29 01 40 F9 08 9D 8C 52` |
+| `Room::PlayMusic()` | `0x451834` | 1,732 | `FF C3 01 D1 E9 23 01 6D FD 7B 02 A9 FD 83 00 91` |
+
+These entries show that some gameplay/costume/music implementation remains in the native game. They are **not yet approved hook points**: function semantics, object layout, calling convention, thread/frame context, static/global access and cleanup must be verified before invocation. The Lua-facing function names and native C++ methods are not automatically interchangeable.
+
 ## NRO header build IDs and Atmosphère
 
 The official Atmosphère documentation describes NRO IPS/IPS32 patch lookup under:
