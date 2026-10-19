@@ -22,6 +22,7 @@ static char *read_script(const char *path, size_t *length) {
         fclose(file);
         return NULL;
     }
+
     if (fseek(file, 0, SEEK_SET) != 0) {
         fclose(file);
         return NULL;
@@ -50,9 +51,9 @@ int main(int argc, char **argv) {
     (void)argv;
 
     consoleInit(NULL);
-    printf("The Modding of Isaac - Lua POC\n");
-    printf("Standalone Lua 5.1 runtime test\n");
-    printf("--------------------------------\n");
+    printf("The Modding of Isaac - Specialist mock POC\n");
+    printf("Standalone Lua 5.1 test; not an Isaac mod\n");
+    printf("-------------------------------------------\n");
     printf("Script: %s\n\n", SCRIPT_PATH);
 
     lua_State *state = luaL_newstate();
@@ -77,7 +78,7 @@ int main(int argc, char **argv) {
                 const char *error = lua_tostring(state, -1);
                 printf("\nLUA ERROR: %s\n", error != NULL ? error : "(non-string error)");
             } else {
-                printf("\nLua script completed successfully.\n");
+                printf("\nLua test script completed.\n");
             }
         }
 

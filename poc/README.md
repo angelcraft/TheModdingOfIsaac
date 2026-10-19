@@ -1,45 +1,40 @@
-# The Modding of Isaac — isolated Lua POC (Milestone 1A)
+# The Modding of Isaac — isolated Lua POC
 
-This is a **host-side logic prototype**, not an NRO and not a game patch. It deliberately has no Nintendo Switch, Atmosphère, game-memory, or Isaac API integration. It exercises a Specialist-style predicate with mock entities only.
+The project has two deliberately separate parts:
 
-## Goal
+- A host-tested Specialist behavior model driven by synthetic entity records.
+- A standalone Lua 5.1 Switch NRO that runs the same model checks, without entering Isaac.
 
-When a *new* qualifying collectible pedestal is observed, emit one `specialist_start` action marked `before_pickup`; when that pedestal disappears or the room changes, emit `specialist_stop`.
+Neither part provides a native game bridge or patches Isaac.
 
-## Files
+## Source-derived model
 
 - `source/loader_core.lua`: small callback registry with protected dispatch.
-- `mods/specialist_probe.lua`: source-derived Specialist trigger model consuming only the mock host API; it does not call Isaac.
-- `tests/run.lua`: deterministic host-side tests.
-- `test.lua`: tiny script intended for the later standalone Switch-runtime milestone.
-- `docs/ARCHITECTURE.md`: strict separation between VM, host bridge, and Isaac behavior.
-- `docs/NATIVE_INTEGRATION_FEASIBILITY.md`: verified static findings from the supplied Afterbirth+ and Repentance NROs, including build IDs and the inspected stub entry points.
-- `docs/STEAM_MOD_COMPATIBILITY.md`: compatibility tiers and a roadmap for supporting a selected subset of Steam Workshop mods.
-- `tools/nro_identity.py`: read-only NRO0/build-ID/SHA-256 preflight; it can fail closed if the file is not the expected reference build.
+- `mods/specialist_probe.lua`: Specialist trigger model using a mock host API.
+- `test.lua`: shared deterministic checks, executed on the host and by the Switch NRO.
+- `tests/run.lua`: host entry point for `test.lua`.
+- `switch-nro/`: NRO source and build instructions.
+- `docs/SPECIALIST_REPENTANCE_SOURCE_REVIEW.md`: source review for the supplied Workshop ZIP.
+- `docs/SPECIALIST_API_CONTRACT.md`: modeled behavior and unresolved Isaac API requirements.
 
-## Host-side test
-
-Requires Lua 5.1+ installed on the development PC. From this directory, run:
+Run the host suite from this directory with Lua 5.1:
 
 ```sh
-lua tests/run.lua
+lua5.1 tests/run.lua
 ```
 
-GitHub Actions run 39301289065 passed the host Lua tests and standalone NRO build. The user reports that the standalone NRO displayed Lua OK on Switch. This verifies only the isolated runtime; it does not verify Isaac integration.
+## Switch package
 
-Passing these tests means only that the isolated logic behaves as specified on a host Lua runtime and that the NRO preflight rejects malformed synthetic headers. It does **not** prove the Switch Lua port builds, an NRO launches, code runs inside Isaac, entity values are mapped correctly, or animation/music works.
+The CI artifact contains an NRO plus the same Lua test and model files. On success, the console shows:
 
-To inspect a game NRO without modifying it:
-
-```sh
-python3 tools/nro_identity.py /path/to/Repentance.nro --expect repentance
-python3 tools/nro_identity.py /path/to/AfterbirthPlus.nro --expect afterbirth-plus
+```text
+PASS: 9 Specialist mock scenarios plus callback dispatch
+Lua runtime: Lua 5.1
+LIMIT: simulation only; no Isaac API or game integration.
 ```
 
-The `--expect` check succeeds only for the exact reference hash plus matching header build ID; an updated or modified NRO is intentionally reported as unknown until researched separately.
+SD-card layout and the download workflow are documented in `switch-nro/README.md`.
 
-## Standalone Switch runtime smoke test
+## Integration status
 
-The current NRO experiment uses a pinned Lua 5.1 Switch port to establish a standalone Lua execution path on homebrew. It is intentionally separate from Isaac. The reported Lua OK message does not demonstrate mod compatibility.
-
-The Repentance source review is in `docs/SPECIALIST_REPENTANCE_SOURCE_REVIEW.md`, and `docs/SPECIALIST_API_CONTRACT.md` separates the modeled trigger from unresolved Isaac APIs. For broader mod compatibility, the project must evaluate a Lua 5.3 runtime baseline and implement the game's API/callback bridge. See `docs/STEAM_MOD_COMPATIBILITY.md`. No game process access is part of this milestone.
+A Switch-side pass checks that the source-derived mock logic runs under the pinned Lua 5.1 Switch runtime. It still cannot prove real Isaac entity mapping, callbacks, graphics, music, or game integration. The exact target build, native call flow, ABI and a safe integration route must be verified before creating a game patch.

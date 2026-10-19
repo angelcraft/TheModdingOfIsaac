@@ -27,7 +27,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y lua5.1
-      - name: Run isolated Specialist logic tests
+      - name: Run shared Specialist mock checks
         working-directory: poc
         run: |
           set -euo pipefail
@@ -35,7 +35,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_*.py'
 
   switch-nro:
-    name: Build standalone Switch NRO
+    name: Build standalone Specialist mock test
     runs-on: ubuntu-latest
     container:
       image: devkitpro/devkita64:20260219
@@ -61,19 +61,21 @@ jobs:
           test -s poc/switch-nro/third_party/lua51-switch/src/liblua.a
       - name: Build NRO
         run: make -C poc/switch-nro
-      - name: Package test files
+      - name: Package Switch checks
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist/switch/TheModdingOfIsaac
+          mkdir -p dist/switch/TheModdingOfIsaac/source dist/switch/TheModdingOfIsaac/mods
           cp poc/switch-nro/TheModdingOfIsaacLuaPOC.nro dist/switch/
           cp poc/test.lua dist/switch/TheModdingOfIsaac/test.lua
+          cp poc/source/loader_core.lua dist/switch/TheModdingOfIsaac/source/loader_core.lua
+          cp poc/mods/specialist_probe.lua dist/switch/TheModdingOfIsaac/mods/specialist_probe.lua
           cp poc/switch-nro/README.md dist/README.txt
-          (cd dist && zip -r ../TheModdingOfIsaac_Lua_Switch_POC_0.1.zip switch README.txt)
+          (cd dist && zip -r ../TheModdingOfIsaac_Specialist_Switch_POC_0.2.zip switch README.txt)
       - name: Upload Switch POC
         uses: actions/upload-artifact@v4
         with:
-          name: TheModdingOfIsaac-Lua-Switch-POC
-          path: TheModdingOfIsaac_Lua_Switch_POC_0.1.zip
+          name: TheModdingOfIsaac-Specialist-Switch-POC
+          path: TheModdingOfIsaac_Specialist_Switch_POC_0.2.zip
           if-no-files-found: error
           retention-days: 14

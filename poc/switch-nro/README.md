@@ -1,34 +1,36 @@
-# Standalone Switch Lua NRO — Milestone 1B
+# Specialist mock checks on Switch — POC 0.2
 
-This app is completely separate from Isaac. It starts Lua 5.1, reads one Lua file from the SD card, executes it, reports success/errors on the homebrew console and waits for PLUS to exit.
+This standalone homebrew NRO runs the same source-derived Specialist mock checks as the host Lua 5.1 test suite. It is separate from Isaac: it does not launch or patch the game, read game memory, or provide Isaac APIs.
 
-## SD layout
+## SD card layout
 
-Copy the built NRO and the script so the SD card contains:
+Extract the ZIP at the SD card root and keep this layout:
 
 ```text
 sdmc:/switch/TheModdingOfIsaacLuaPOC.nro
 sdmc:/switch/TheModdingOfIsaac/test.lua
+sdmc:/switch/TheModdingOfIsaac/source/loader_core.lua
+sdmc:/switch/TheModdingOfIsaac/mods/specialist_probe.lua
 ```
 
-The supplied test script prints `Lua OK`. It is only a smoke-test script and exposes no Isaac API.
+Launch `TheModdingOfIsaacLuaPOC.nro` from Homebrew Menu. A successful run prints:
+
+```text
+PASS: 9 Specialist mock scenarios plus callback dispatch
+Lua runtime: Lua 5.1
+LIMIT: simulation only; no Isaac API or game integration.
+```
+
+Press PLUS to close. The checks exercise modeled trigger rules using synthetic entities. A pass confirms this script ran on the Switch Lua runtime; it does not validate entity mapping or behavior inside Isaac.
 
 ## Build
 
-The workflow builds Lua 5.1.5 from the `carstene1ns/lua51-switch` repository at pinned commit `b1406bb55375787b3559bd1981020541c95a2bee`, then links this NRO against `liblua.a` using devkitPro/libnx.
+CI builds Lua 5.1.5 from `carstene1ns/lua51-switch` at pinned commit `b1406bb55375787b3559bd1981020541c95a2bee`, then links the NRO using devkitPro/libnx.
 
-Local build prerequisites: devkitPro with devkitA64 and libnx, make, git, and a C toolchain. From the repo root:
+## Safety boundary
 
-```sh
-git clone https://github.com/carstene1ns/lua51-switch.git poc/switch-nro/third_party/lua51-switch
-git -C poc/switch-nro/third_party/lua51-switch checkout b1406bb55375787b3559bd1981020541c95a2bee
-make -C poc/switch-nro/third_party/lua51-switch
-make -C poc/switch-nro
-```
-
-## Limitations and security
-
-- This proves only standalone Lua execution on Switch when built and run successfully.
-- It does not inject into Isaac, inspect game memory, or implement Isaac callbacks.
-- This POC opens the standard Lua libraries for smoke testing. Do not treat it as a secure sandbox for arbitrary third-party mods.
-- Do not put game dumps, executable assets, or proprietary resources in this directory.
+- No Isaac process or game memory is accessed.
+- No binary patch is produced.
+- The Specialist module consumes mock entity records only; a verified native adapter is still missing.
+- The Lua standard libraries are open for this POC. Do not treat it as a sandbox for arbitrary third-party mods.
+- Never put game dumps, executable assets, or proprietary resources in this repository.

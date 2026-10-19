@@ -11,9 +11,9 @@ TARGET := TheModdingOfIsaacLuaPOC
 BUILD := build
 SOURCES := source
 INCLUDES := third_party/lua51-switch/src
-APP_TITLE := The Modding of Isaac - Lua POC
+APP_TITLE := The Modding of Isaac - Specialist Mock POC
 APP_AUTHOR := The Modding of Isaac
-APP_VERSION := 0.1
+APP_VERSION := 0.2
 
 ARCH := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 CFLAGS := -g -Wall -O2 -ffunction-sections -fdata-sections $(ARCH)
