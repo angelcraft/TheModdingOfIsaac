@@ -21,6 +21,15 @@ This contract is based on the public [SpecialistABP source](https://github.com/D
 
 This table is a research checklist, not a promise that these globals, methods, constants, or callbacks exist in Repentance on Switch.
 
+## Source review findings
+
+The public source is explicitly Afterbirth+ only; its README says not to use it with Repentance. These are source-derived findings, not Switch runtime observations:
+
+- `ClearItemList` fills numeric slots, but the pickup path calls `table.insert(mod.items, v.SubType, true)`. That inserts and shifts later entries; the Repentance adaptation should use a keyed set such as `seen[subtype] = true`.
+- The active-dance scan matches pickup type and subtype but omits pickup variant and instance identity. The adapter should retain a stable identity for the exact pedestal that triggered the animation.
+- Both room scans stop at `#itemsNearby - 1` based on an upstream crash comment. Confirm the target container's indexing and bounds before choosing a loop limit.
+- The allowlist comes from the AB+ source and must be rebuilt or verified against the selected Repentance target.
+
 ## Behavioral contract for the POC
 
 The isolated probe uses only the mock host API documented in its source. Its current contract is:
