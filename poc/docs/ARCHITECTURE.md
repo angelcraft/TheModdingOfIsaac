@@ -58,3 +58,15 @@ The previous dump report identifies two candidate executables in one update arch
 - `Program #0/1/.nro/Repentance.nro` — 11,210,752 bytes; SHA-256 `cc363208c220f65547edda6d8268b3b6c0f7373b14c91ae6ffb378018de4b66a`.
 
 Those values identify files in the previously analysed archive, not what the console is currently launching. Runtime/title/DLC selection remains a precondition before enabling any host bridge. Treat Afterbirth+ `resources/` and Repentance `rp_patch/resources/` as separate targets.
+
+## Switch package evidence
+
+The DBI title details photo supplied on 2026-10-20 reports:
+
+- Title: `The Binding of Isaac: Afterbirth+`
+- Version: `1.7.9b`
+- Title ID: `010021C000B6A000`
+- Displayed BID: `B6E5BDB9DC12E1D1`
+- Content entries: `Application`, `Update`, and `Addon 0001`
+
+This narrows the installed Switch title/update configuration and is useful for choosing the right resource target. It is package-manager metadata; it does not prove which executable is currently running or establish a byte-for-byte match with either NRO listed above. Keep the runtime bridge and any binary patch disabled until the executable identity and a real call path/ABI are verified.
