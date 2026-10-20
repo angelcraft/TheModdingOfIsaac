@@ -12,6 +12,7 @@ Do not create or install an NRO/IPS/native hook until the exact build identity, 
 - Local NRO path: `C:\Users\User\Desktop\Switch\The Binding of Isaac_ Afterbirth+ 1.7.9b [010021C000B6A800][v524288][UPD]\The Binding of Isaac_ Afterbirth+ 1.7.9b [010021C000B6A800][v524288][UPD]\Program #0\1\.nro\Repentance.nro`.
 - DBI screenshot BID B6E5BDB9DC12E1D1 is not mapped to the internal NRO Build ID.
 - Update tree includes AfterbirthPlus.nro, .nrr registration files, kage_mount_points.dat, and resource/RP patch trees.
+- The local Desktop inventory and the supplied update ZIP contain only the two game NROs and matching .nrr files; no base-game `main`/`.nso` or `main.npdm` was found there. Thus the outer loader path cannot be verified from the current dump. The next useful artifact is the base title's own `main` executable plus `main.npdm`, or equivalent runtime evidence.
 
 ## Findings
 - ModManager::RunModScripts at 0x421838 is RET; RunModScript(string&) at 0x42183C returns false; UpdateWorkshopMods at 0x42311C is RET.
