@@ -1,11 +1,10 @@
 #include <switch_min.h>
 #include <saltysd/saltysd_core.h>
+#include <saltysd/saltysd_dynamic.h>
 
-extern "C" {
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
-}
 
 #include <cstdlib>
 #include <cstdio>
@@ -24,6 +23,29 @@ void trace(const char* message) {
         SaltySDCore_fwrite("\n", 1, 1, g_log_file);
     }
     if (message) svcOutputDebugString(message, std::strlen(message));
+}
+
+void probe_builtin_symbol(const char* label, const char* mangled_name) {
+    const uintptr_t address = SaltySDCore_FindSymbolBuiltin(mangled_name);
+    char line[192] = {};
+    std::snprintf(
+        line,
+        sizeof(line),
+        "builtin symbol %s: %s (0x%llX)",
+        label,
+        address ? "FOUND" : "not found",
+        static_cast<unsigned long long>(address));
+    trace(line);
+}
+
+void probe_repentance_symbols() {
+    // Read-only lookup: this does not call or patch the returned game addresses.
+    probe_builtin_symbol(
+        "Manager::Update",
+        "_ZN15IsaacRepentance7Manager6UpdateEv");
+    probe_builtin_symbol(
+        "ModManager::RunModScript",
+        "_ZN15IsaacRepentance10ModManager12RunModScriptERNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE");
 }
 
 int lua_log(lua_State* state) {
@@ -70,6 +92,7 @@ bool execute_probe() {
         return false;
     }
     trace("SaltyNX plugin entered; preparing Lua 5.1");
+    probe_repentance_symbols();
 
     FILE* file = SaltySDCore_fopen(path, "rb");
     if (!file) {
@@ -163,3 +186,4 @@ int main(int, char**) {
     }
     return ok ? 0 : 1;
 }
+
