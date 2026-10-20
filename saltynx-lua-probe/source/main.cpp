@@ -1,9 +1,11 @@
 #include <switch_min.h>
 #include <saltysd/saltysd_core.h>
 
+extern "C" {
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
+}
 
 #include <cstdlib>
 #include <cstdio>
