@@ -40,6 +40,10 @@ The exact Switch NRO contains the `RunModScript` string but a literal scan found
 
 Ghidra reports `RunModScripts` as an immediate return and `RunModScript` as returning zero; it found no incoming direct references. Returning true would not create a VM, load source, expose Isaac APIs, or dispatch callbacks.
 
+A read-only follow-up scanned all 12,101 functions in the exact Switch NRO's Ghidra project. It still found no direct call-site to `Pickup::Update` (0x26c9b8); its only reference in the analyzed database is a data reference from 0x787d48. That does not rule out indirect dispatch, but the entry point, call flow, and ABI remain unverified.
+
+REA is connected in the current Windows Codex session and detects Ghidra 12.1.4, but its Windows native-target admission rejected this NRO format. The read-only Ghidra project remains the analysis route for this target; REA did not open or modify it.
+
 The project README records earlier IPS/NRO hook experiments and a passthrough diagnostic crashing the game. Those patches were removed and the Switch installation was cleaned. Do not create or install a native patch until the exact target, live call flow, ABI, displaced instructions, and return path are independently verified.
 
 The Lua 5.1 Switch NRO is an isolated homebrew test, not an Isaac loader.
