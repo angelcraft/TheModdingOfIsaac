@@ -1,0 +1,46 @@
+name: Build SaltyNX Lua probe
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "saltynx-lua-probe/**"
+      - ".github/workflows/build-saltynx-lua-probe.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkita64:20260219
+    env:
+      DEVKITPRO: /opt/devkitpro
+      NXFPS_REF: c66727368cfd4d55f6424176d43a5ef4da1465c3
+      LUA_REF: b1406bb55375787b3559bd1981020541c95a2bee
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build plugin and Lua 5.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE/saltynx-lua-probe"
+          DEPS="$RUNNER_TEMP/saltynx-lua-deps"
+          mkdir -p "$DEPS"
+          git clone --quiet https://github.com/masagrator/NX-FPS.git "$DEPS/NX-FPS"
+          git -C "$DEPS/NX-FPS" checkout --quiet "$NXFPS_REF"
+          git clone --quiet https://github.com/carstene1ns/lua51-switch.git "$DEPS/lua51-switch"
+          git -C "$DEPS/lua51-switch" checkout --quiet "$LUA_REF"
+          make -C "$DEPS/lua51-switch/src" switch
+
+          cp "$ROOT/source/main.cpp" "$DEPS/NX-FPS/source/main.cpp"
+          sed -i 's|^TARGET[[:space:]]*:=.*|TARGET := IsaacLuaBridge|' "$DEPS/NX-FPS/Makefile"
+          sed -i 's|^INCLUDES[[:space:]]*:=.*|INCLUDES := include '"$DEPS"'/lua51-switch/src|' "$DEPS/NX-FPS/Makefile"
+          sed -i 's|^LIBS[[:space:]]*:=.*|LIBS := -lnx_min -L'"$DEPS"'/lua51-switch/src -llua -lm|' "$DEPS/NX-FPS/Makefile"
+          make -C "$DEPS/NX-FPS" clean
+          make -C "$DEPS/NX-FPS" -j2
+
+          mkdir -p "$ROOT/dist"
+          cp "$DEPS/NX-FPS/IsaacLuaBridge.elf" "$ROOT/dist/"
+          cp "$ROOT/probe.lua" "$ROOT/dist/"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IsaacLuaBridge-lua-probe
+          path: outputs/saltynx-lua-probe/dist/
