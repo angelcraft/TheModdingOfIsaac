@@ -57,7 +57,7 @@ The previous dump report identifies two candidate executables in one update arch
 - `Program #0/1/.nro/AfterbirthPlus.nro` — 8,523,776 bytes; SHA-256 `705402b213072f67b561d011302c315448f47a16b9187b15b8823e003f6ccdad`.
 - `Program #0/1/.nro/Repentance.nro` — 11,210,752 bytes; SHA-256 `cc363208c220f65547edda6d8268b3b6c0f7373b14c91ae6ffb378018de4b66a`.
 
-Those values identify files in the previously analysed archive, not what the console is currently launching. Runtime/title/DLC selection remains a precondition before enabling any host bridge. Treat Afterbirth+ `resources/` and Repentance `rp_patch/resources/` as separate targets.
+The Switch evidence below identifies the installed configuration as Afterbirth+ with the Repentance add-on, so Repentance's `rp_patch/resources/` is the relevant resource candidate for this mod. These archive hashes still do not prove that either extracted NRO is byte-for-byte the executable currently launched by the console. Keep the runtime bridge and any binary patch disabled until that executable identity and a real call path/ABI are verified.
 
 ## Switch package evidence
 
@@ -69,4 +69,6 @@ The DBI title details photo supplied on 2026-10-20 reports:
 - Displayed BID: `B6E5BDB9DC12E1D1`
 - Content entries: `Application`, `Update`, and `Addon 0001`
 
-This narrows the installed Switch title/update configuration and is useful for choosing the right resource target. It is package-manager metadata; it does not prove which executable is currently running or establish a byte-for-byte match with either NRO listed above. Keep the runtime bridge and any binary patch disabled until the executable identity and a real call path/ABI are verified.
+On Switch, Repentance is distributed as add-on content that requires Afterbirth+; Nintendo's listing identifies it as `The Binding of Isaac: Repentance` DLC and names Afterbirth+ as the required game: https://www.nintendo.com/en-gb/DLC/The-Binding-of-Isaac-Repentance-2081104.html. Together with the DBI `Addon 0001` entry, this identifies the user's installed configuration as Afterbirth+ plus Repentance, rather than Afterbirth+ alone. The title label in DBI is the base game's name.
+
+The version and title IDs are package-manager metadata. They identify the installed title/update/add-on configuration, but are not a cryptographic hash of the executable bytes. Match the running executable to the analysed NRO before enabling a bridge or patch.
