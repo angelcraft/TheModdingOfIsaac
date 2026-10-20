@@ -6,6 +6,10 @@ on:
     paths:
       - "saltynx-lua-probe/**"
       - ".github/workflows/build-saltynx-lua-probe.yml"
+  pull_request:
+    paths:
+      - "saltynx-lua-probe/**"
+      - ".github/workflows/build-saltynx-lua-probe.yml"
 
 jobs:
   build:
@@ -43,4 +47,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: IsaacLuaBridge-lua-probe
-          path: outputs/saltynx-lua-probe/dist/
+          path: saltynx-lua-probe/dist/
+
