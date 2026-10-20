@@ -9,13 +9,15 @@ Neither part provides a native game bridge or patches Isaac.
 
 ## Source-derived model
 
-- `source/loader_core.lua`: small callback registry with protected dispatch.
+- `source/loader_core.lua`: small callback registry with protected dispatch for the isolated behavior model.
+- `source/isaac_compat.lua`: Lua 5.1 mod-registration and callback-dispatch runtime foundation. It requires explicit host-supplied Isaac globals; it does not emulate them.
 - `mods/specialist_probe.lua`: Specialist trigger model using a mock host API.
 - `test.lua`: shared deterministic checks, executed on the host and by the Switch NRO.
 - `tests/run.lua`: host entry point for `test.lua`.
 - `switch-nro/`: NRO source and build instructions.
 - `docs/SPECIALIST_REPENTANCE_SOURCE_REVIEW.md`: source review for the supplied Workshop ZIP.
 - `docs/SPECIALIST_API_CONTRACT.md`: modeled behavior and unresolved Isaac API requirements.
+- `docs/SPECIALIST_LUA51_PREPARATION.md`: guarded source conversion and its limits.
 
 Run the host suite from this directory with Lua 5.1:
 
@@ -41,4 +43,4 @@ SD-card layout and the download workflow are documented in `switch-nro/README.md
 
 ## Integration status
 
-A Switch-side pass checks that the source-derived mock logic runs under the pinned Lua 5.1 Switch runtime. It still cannot prove real Isaac entity mapping, callbacks, graphics, music, or game integration. The exact target build, native call flow, ABI and a safe integration route must be verified before creating a game patch.
+`source/isaac_compat.lua` now provides a real Lua-side registration/dispatch boundary for a host adapter. It does not supply native game values or functions. The Switch NRO remains a separate homebrew app. An identity-checked game adapter must still provide real callbacks, globals, entity/player APIs, graphics, music, and resource loading before this can run inside Isaac. Do not create a game patch until the target build, call flow, ABI, and reversible hook are verified.
