@@ -44,3 +44,14 @@ No playable Switch package has been produced.
 - Local call-flow notes: `ghidra-analysis/SWITCH_CALLFLOW_EVIDENCE.md`
 - Prepared Lua status and API requirements: `outputs/specialistforgooditems-switch-prep/SWITCH_PORT_STATUS.md`
 - Bridge API inventory: `outputs/specialistforgooditems-switch-prep/SWITCH_BRIDGE_CONTRACT.md`
+
+
+## NRR registration evidence
+
+The extracted update includes `Program #0/1/.nrr/Repentance.nrr` and `AfterbirthPlus.nrr`, each 4096 bytes, beside the matching NRO files. The NRR0 parser in [`tools/inspect_nrr_registration.py`](../tools/inspect_nrr_registration.py) verified both records against the exact files:
+
+- Both NRR headers name base program ID `010021C000B6A000`.
+- Each has one SHA-256 entry at offset `0x350`; each entry exactly matches the full-file SHA-256 of its paired NRO. For Repentance this is `CC363208C220F65547EDDA6D8268B3B6C0F7373B14C91AE6FFB378018DE4B66A`; for AfterbirthPlus it is `705402B213072F67B561D011302C315448F47A16B9187B15B8823E003F6CCDAD`.
+- Reproduce with `python tools/inspect_nrr_registration.py <NRO> <NRR> 010021C000B6A000`.
+
+The [NRR format](https://switchbrew.org/wiki/NRR0) uses this hash list to authorize NROs for loading. This is package-level evidence that the exact NROs are registered for the base program and makes a module-load observation path more plausible. It does not identify the runtime call site, prove when Repentance is loaded, or validate a safe gameplay hook. The NRR signatures were not cryptographically verified.
