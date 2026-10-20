@@ -2,9 +2,11 @@
 #include <saltysd/saltysd_core.h>
 #include <saltysd/saltysd_dynamic.h>
 
+extern "C" {
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
+}
 
 #include <cstdlib>
 #include <cstdio>
