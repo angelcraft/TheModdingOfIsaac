@@ -36,7 +36,7 @@ jobs:
 
           cp "$ROOT/source/main.cpp" "$DEPS/NX-FPS/source/main.cpp"
           sed -i 's|^TARGET[[:space:]]*:=.*|TARGET := IsaacLuaBridge|' "$DEPS/NX-FPS/Makefile"
-          sed -i 's|^INCLUDES[[:space:]]*:=.*|INCLUDES := include '"$DEPS"'/lua51-switch/src|' "$DEPS/NX-FPS/Makefile"
+          sed -i 's|^INCLUDES[[:space:]]*:=.*|INCLUDES := include ../lua51-switch/src|' "$DEPS/NX-FPS/Makefile"
           sed -i 's|^LIBS[[:space:]]*:=.*|LIBS := -lnx_min -L'"$DEPS"'/lua51-switch/src -llua -lm|' "$DEPS/NX-FPS/Makefile"
           make -C "$DEPS/NX-FPS" clean
           make -C "$DEPS/NX-FPS" -j2
