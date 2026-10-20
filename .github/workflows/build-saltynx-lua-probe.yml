@@ -14,7 +14,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: devkitpro/devkita64:20260219
+    container: devkitpro/devkita64:20240202
     env:
       DEVKITPRO: /opt/devkitpro
       NXFPS_REF: c66727368cfd4d55f6424176d43a5ef4da1465c3
