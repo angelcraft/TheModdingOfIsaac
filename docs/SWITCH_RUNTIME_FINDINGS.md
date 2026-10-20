@@ -15,20 +15,28 @@ The user's DBI image shows The Binding of Isaac: Afterbirth+ v1.7.9b and update 
 
 ## Static observations
 
-- In the Repentance module, `Manager::Update` directly calls `Game::Update`; `Room::Update` directly calls `EntityList::Update(bool)`.
-- The `EntityList::Update(bool)` virtual dispatch at object-vtable offset `+0x20` resolves through the `Entity` and `Entity_Pickup` vtables to `Entity::Update` and `Entity_Pickup::Update`. This confirms that pickups have a native update path. A complete per-frame path from `Game::Update` to `Room::Update` is still not established.
+- `Manager::Update` at `0x3F8DB8` directly calls `Game::Update` at `0x351884` (`0x3F9070`). `Game::Update` directly calls `PlayerManager::Update` at `0x43F83C` (`0x3521F8`).
+- The exact `PlayerManager::Update` symbol range (`0x43F83C..0x43FA1B`) has seven direct imported calls: `Game::IsPaused`, `Entity_Player::IsFullSpriteRendering`, `TemporaryEffects::AddEffect`, two `ANM2::Update` calls, `Camera::smooth_focus_samples`, and `SoundEffects::GetAmbientSoundVolume`. It has no direct call or indirect `BLR` dispatch to `Room::Update` or `EntityList::Update`.
+- A full NRO scan decoded direct AArch64 `BL` instructions and resolved their PLT imports. Direct calls to `Room::Update` appear in `Level::place_room` and `LevelGenerator` functions; none appear in `Manager::Update`, `Game::Update`, or `PlayerManager::Update`. This narrows the missing frame path but does not rule out indirect dispatch from another routine.
+- `Room::Update` at `0x46D788` calls `EntityList::Update(bool)` through PLT at `0x46E6E4`; its indirect entity dispatch includes the pickup update path. This proves the room-to-entity path, not that it runs every gameplay frame.
 - `ModManager::RunModScripts` at `0x421838` is a single `RET`; `ModManager::RunModScript(string&)` at `0x42183C` returns false. The base module's `RunModScript` also returns false.
-- `UpdateWorkshopMods` at `0x42311C` is a single `RET`. `TryRedirectPath` is a trampoline to an unresolved indirect target, so a working mod-resource redirection path has not been demonstrated.
+- `UpdateWorkshopMods` at `0x42311C` is a single `RET`. `TryRedirectPath` is a trampoline to an unresolved indirect target, so a working mod-resource overlay path has not been demonstrated.
 - Neither module contains checked Lua/Isaac-mod-runtime strings such as `luaL_newstate`, `luaL_loadfile`, `lua_pcall`, `RegisterMod`, or `MC_POST_UPDATE`. This is negative string evidence only; stripped or statically linked code cannot be excluded from strings alone.
 - The Switch standalone Lua test shown by the user proves that its Lua interpreter can run independently. It does not prove a Lua state, callback API, or Isaac object access exists inside the game.
 
 REA's Windows Ghidra provider rejected these NROs as unsupported. Static analysis was done with the installed local Ghidra against copies/projects; neither game NRO was modified.
 
+## Integration options
+
+- Atmosphere LayeredFS can replace files under a title's RomFS, but it cannot implement the missing Lua VM, callbacks, Isaac API, or the mod's pedestal-triggered dance logic.
+- SaltyNX documents plugins for 64-bit games and recommends ExLaunch for game-specific code injection. Its plugin ecosystem also has known games where the relevant framework is contained in an NRO and external plugins are unsupported. This target is an NRO module, so SaltyNX plugin compatibility must be demonstrated before building or installing a plugin; no NRO-specific ExLaunch route is verified here. See [SaltyNX](https://github.com/masagrator/SaltyNX), [ExLaunch](https://github.com/shadowninja108/exlaunch), and [NX-FPS's NRO compatibility note](https://github.com/masagrator/NX-FPS).
+- The environment has no local Switch AArch64 compiler/build tools. A hosted build would only solve compilation, not the missing NRO injection, call-flow, ABI, and return-path evidence.
+
 ## Porting decision
 
-Changing `RunModScript` to return true would only change a result flag. It would not create a Lua VM, implement the callbacks and Isaac API used by Specialist, or register costume/music resources. LayeredFS can supply replacement files, but no working mod-resource path is verified here. Therefore the prepared Lua source is not an installable or playable Isaac Switch mod.
+Changing `RunModScript` to return true would only change a result flag. It would not create a Lua VM, implement the callbacks and Isaac API used by Specialist, or register costume/music resources. A native plugin would be a separate port, not a conversion of this Lua package. Do not create an IPS or modified game NRO until the exact target identity, a real execution path, ABI, displaced instructions, and return path are independently verified.
 
-The alternative is a separate native plugin that reimplements the relevant Specialist behavior. That requires a Switch AArch64 homebrew toolchain, a verified plugin/hook interface and target-build guard, then on-device testing. This environment currently has no AArch64 Switch compiler/build tools. No IPS, modified game NRO, or inert ZIP presented as playable has been produced.
+No playable Switch package has been produced.
 
 ## Evidence files
 
