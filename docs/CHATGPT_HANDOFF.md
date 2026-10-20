@@ -25,6 +25,7 @@ Do not create or install an NRO/IPS/native hook until the exact build identity, 
 - REA is connected in the current agent session but its Windows Ghidra provider rejects this Switch .nro as an unsupported binary format. Use the existing local Ghidra project/scanners for this artifact; do not retry the same rejected REA open.
 - The official `ultimate-research/nro-hook-plugin` source advertises centralized hooks for NRO loads and requires cargo-skyline. Its `src/lib.rs` replaces Skyline's `nn::ro::LoadModule`, calls the original, then builds `NroInfo` and invokes registered load callbacks: https://github.com/ultimate-research/nro-hook-plugin/blob/master/src/lib.rs
 - This is a concrete candidate for observing a game that dynamically loads its code as an NRO; it avoids assuming SaltyNX's ordinary plugin loader can see NRO-hosted frameworks. It does NOT prove that Isaac's Repentance.nro passes through `ro::LoadModule`, that Skyline can load in this title, or that installing a hook is safe. The target call path, target ABI, hook/displaced-instruction contract, and return path remain unverified; do not build/install it yet.
+- A new read-only scanner, `ghidra-analysis/scripts/inspect_nro_loader_imports.py`, verified the exact NRO SHA-256, parsed all 7,442 RELA import entries, and found no imported symbol matching `nn::ro`, `roLoadModule`, `roUnloadModule`, `ldrRo`, `LoadModule`, or `NroInfo`. This is bounded evidence about the NRO's own imported symbols only; it does not cover the outer program loader, indirect service resolution, or runtime module-load behavior.
 - SaltyNX's own README recommends ExLaunch for title-specific injection. NX-FPS's archived README lists several games whose framework is inside NROs as unsupported by SaltyNX external plugins. Those are analogous cases, not proof about Isaac: https://github.com/masagrator/SaltyNX and https://github.com/masagrator/NX-FPS
 - ExLaunch's config distinguishes load kind `Module` from `AsRtld` and `Kip`, but that setting alone does not establish compatibility with this title's dynamic NRO or runtime: https://github.com/shadowninja108/exlaunch/blob/main/config.mk
 
@@ -36,12 +37,13 @@ Local folder: `outputs/specialistforgooditems-switch-prep`. It contains 101 copi
 - `outputs/specialistforgooditems-switch-prep/SWITCH_PORT_STATUS.md`
 - `outputs/specialistforgooditems-switch-prep/SWITCH_BRIDGE_CONTRACT.md`
 - Scanner: `ghidra-analysis/scripts/inspect_nro_mod_calls.py`
+- NRO loader import scan: `ghidra-analysis/scripts/inspect_nro_loader_imports.py` (exact-hash, 7,442 relocation entries)
 - Census output: `ghidra-analysis-symbolized/ModCallCensus.txt`
 - Room call scan: `ghidra-analysis-symbolized/RoomUpdateCallerScan.txt`
 - Full local handoff: `CONTINUATION_HANDOFF.md`
 
 ## Continue from here
-1. Use the existing local Ghidra project (no new analysis setup) to finish inspecting indirect references, strings, and any thread-creation/loader call sites around workshop_update_thread and the NRO load path.
+1. Use the existing local Ghidra project (no new analysis setup) to finish inspecting indirect references and any thread-creation call sites around workshop_update_thread. The game NRO itself has no obvious direct RO/NRO loader imports; establish the outer program's load path separately.
 2. Establish from the exact game package/runtime evidence whether Repentance.nro is dynamically loaded through nn::ro::LoadModule and whether a Skyline plugin can be loaded in this title. Do not infer this from the plugin's README, .nrr presence, or another game's compatibility.
 3. Determine whether LayeredFS can add the mod's XML/assets for this exact build. Resource overrides alone cannot execute this Lua.
 4. Implement and test a verified in-game bridge before producing an installable package.
