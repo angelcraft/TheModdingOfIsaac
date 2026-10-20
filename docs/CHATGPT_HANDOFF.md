@@ -21,6 +21,13 @@ Do not create or install an NRO/IPS/native hook until the exact build identity, 
 - TryRedirectPath (0x41FB04) is an 8-byte trampoline to an unresolved indirect target. A mod resource redirect is not established.
 - No game NRO, IPS, plugin, or playable package has been created.
 
+## New lead: generic NRO load callbacks (source verified, target not verified)
+- REA is connected in the current agent session but its Windows Ghidra provider rejects this Switch .nro as an unsupported binary format. Use the existing local Ghidra project/scanners for this artifact; do not retry the same rejected REA open.
+- The official `ultimate-research/nro-hook-plugin` source advertises centralized hooks for NRO loads and requires cargo-skyline. Its `src/lib.rs` replaces Skyline's `nn::ro::LoadModule`, calls the original, then builds `NroInfo` and invokes registered load callbacks: https://github.com/ultimate-research/nro-hook-plugin/blob/master/src/lib.rs
+- This is a concrete candidate for observing a game that dynamically loads its code as an NRO; it avoids assuming SaltyNX's ordinary plugin loader can see NRO-hosted frameworks. It does NOT prove that Isaac's Repentance.nro passes through `ro::LoadModule`, that Skyline can load in this title, or that installing a hook is safe. The target call path, target ABI, hook/displaced-instruction contract, and return path remain unverified; do not build/install it yet.
+- SaltyNX's own README recommends ExLaunch for title-specific injection. NX-FPS's archived README lists several games whose framework is inside NROs as unsupported by SaltyNX external plugins. Those are analogous cases, not proof about Isaac: https://github.com/masagrator/SaltyNX and https://github.com/masagrator/NX-FPS
+- ExLaunch's config distinguishes load kind `Module` from `AsRtld` and `Kip`, but that setting alone does not establish compatibility with this title's dynamic NRO or runtime: https://github.com/shadowninja108/exlaunch/blob/main/config.mk
+
 ## Prepared mod
 Local folder: `outputs/specialistforgooditems-switch-prep`. It contains 101 copied files, with Lua 5.1 syntax edits in main.lua and main.lua.original preserved. The mod needs Isaac callbacks, player/room/pickup APIs, item config, costume/music registration, JSON persistence, and optional Mod Config Menu. The user's Switch photo showed 9 passing standalone mock scenarios and explicitly identified the test as not an Isaac mod.
 
@@ -34,9 +41,9 @@ Local folder: `outputs/specialistforgooditems-switch-prep`. It contains 101 copi
 - Full local handoff: `CONTINUATION_HANDOFF.md`
 
 ## Continue from here
-1. Inspect indirect references and strings around workshop_update_thread and determine if it is launched or related to mod loading.
-2. Identify the actual module load/runtime path; check whether SaltyNX can see this game's Repentance module. NX-FPS reports some NRO-hosted frameworks are unsupported by external plugins; this is a warning, not proof about Isaac.
-3. Determine whether LayeredFS can add the mod's XML/assets for this exact build. Resource overrides cannot execute this Lua.
+1. Use the existing local Ghidra project (no new analysis setup) to finish inspecting indirect references, strings, and any thread-creation/loader call sites around workshop_update_thread and the NRO load path.
+2. Establish from the exact game package/runtime evidence whether Repentance.nro is dynamically loaded through nn::ro::LoadModule and whether a Skyline plugin can be loaded in this title. Do not infer this from the plugin's README, .nrr presence, or another game's compatibility.
+3. Determine whether LayeredFS can add the mod's XML/assets for this exact build. Resource overrides alone cannot execute this Lua.
 4. Implement and test a verified in-game bridge before producing an installable package.
 5. The user was asked for one SD-root photo showing atmosphere and, if present, SaltySD/plugins. They had not answered at handoff; avoid asking for more installations.
 
