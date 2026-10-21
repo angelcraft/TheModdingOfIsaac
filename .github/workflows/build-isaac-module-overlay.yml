@@ -31,5 +31,6 @@ jobs:
         with:
           name: IsaacModuleSnapshot-Overlay-SD
           path: artifact
+          include-hidden-files: true
           if-no-files-found: error
 
