@@ -26,7 +26,8 @@ jobs:
           mkdir -p artifact/switch/.overlays
           cp isaac-module-overlay/IsaacModuleSnapshot.ovl artifact/switch/.overlays/
           cp isaac-module-overlay/README.md artifact/
-          sha256sum artifact/switch/.overlays/IsaacModuleSnapshot.ovl > artifact/SHA256SUMS.txt
+          cd artifact
+          sha256sum switch/.overlays/IsaacModuleSnapshot.ovl > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: IsaacModuleSnapshot-Overlay-SD

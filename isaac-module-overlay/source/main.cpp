@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-only
+ * Adapted dmnt:cht client wrappers: Copyright (c) Atmosphere-NX.
+ * Uses libtesla, Copyright (c) WerWolv and contributors.
+ */
 #define TESLA_INIT_IMPL
 #include <tesla.hpp>
 
