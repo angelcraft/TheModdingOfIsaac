@@ -5,16 +5,14 @@
 #define TESLA_INIT_IMPL
 #include <tesla.hpp>
 
-#include <cerrno>
 #include <cinttypes>
 #include <cstdio>
+#include <cstdarg>
 #include <cstring>
-#include <sys/stat.h>
 
 namespace {
 constexpr u64 kTitleId = UINT64_C(0x010021C000B6A000);
-constexpr const char *kLogPath = "sdmc:/switch/TheModdingOfIsaac/module-overlay.log";
-constexpr const char *kCheatPath = "sdmc:/atmosphere/contents/010021c000b6a000/cheats/b6e5bdb9dc12e1d1.txt";
+constexpr const char *kCheatPath = "/atmosphere/contents/010021c000b6a000/cheats/b6e5bdb9dc12e1d1.txt";
 
 constexpr u8 kLoaderBid[0x20] = {
     0xB6,0xE5,0xBD,0xB9,0xDC,0x12,0xE1,0xD1,0xA2,0x5C,0xBF,0xDA,0x17,0xF4,0xBE,0x24,
@@ -38,12 +36,44 @@ Service g_cheat{};
 bool g_cheat_open = false, g_ldr_open = false, g_pminfo_open = false;
 char g_status[192] = "Waiting";
 char g_detail[192] = "Open this overlay while Isaac is running.";
-FILE *g_log = nullptr;
+FsFileSystem g_sd{};
+FsFile g_log{};
+bool g_sd_open = false, g_log_open = false;
+s64 g_log_offset = 0;
+
+// Raw FS handles remain valid when libtesla temporarily unmounts stdio's sdmc:.
+void log_printf(const char *format, ...) {
+    if (!g_log_open) return;
+    char text[1024];
+    va_list args;
+    va_start(args, format);
+    int length = std::vsnprintf(text, sizeof(text), format, args);
+    va_end(args);
+    if (length <= 0) return;
+    const size_t size = static_cast<size_t>(length) < sizeof(text) ? length : sizeof(text) - 1;
+    if (R_SUCCEEDED(fsFileWrite(&g_log, g_log_offset, text, size, FsWriteOption_Flush)))
+        g_log_offset += size;
+}
+
+void open_log() {
+    Result rc = fsOpenSdCardFileSystem(&g_sd);
+    if (R_FAILED(rc)) return;
+    g_sd_open = true;
+    fsFsCreateDirectory(&g_sd, "/switch");
+    fsFsCreateDirectory(&g_sd, "/switch/TheModdingOfIsaac");
+    const char *path = "/switch/TheModdingOfIsaac/module-overlay.log";
+    fsFsCreateFile(&g_sd, path, 0, 0);
+    rc = fsFsOpenFile(&g_sd, path, FsOpenMode_Write, &g_log);
+    if (R_FAILED(rc)) return;
+    g_log_open = true;
+    fsFileSetSize(&g_log, 0);
+    log_printf("IsaacModuleOverlay 0.2.0\nstage=services_ready\n");
+}
 
 void set_status(const char *status, const char *detail) {
     std::snprintf(g_status, sizeof(g_status), "%s", status);
     std::snprintf(g_detail, sizeof(g_detail), "%s", detail);
-    if (g_log) std::fprintf(g_log, "%s: %s\n", status, detail);
+    log_printf("%s: %s\n", status, detail);
 }
 bool fail_result(const char *what, Result rc) {
     char detail[160];
@@ -52,10 +82,10 @@ bool fail_result(const char *what, Result rc) {
     return false;
 }
 void log_bid(const char *label, const u8 bid[0x20]) {
-    if (!g_log) return;
-    std::fprintf(g_log, "%s=", label);
-    for (size_t i = 0; i < 0x20; ++i) std::fprintf(g_log, "%02X", bid[i]);
-    std::fputc('\n', g_log);
+    if (!g_log_open) return;
+    char hex[65];
+    for (size_t i = 0; i < 0x20; ++i) std::snprintf(hex + i * 2, 3, "%02X", bid[i]);
+    log_printf("%s=%s\n", label, hex);
 }
 
 Result cheat_has_process(bool *out) {
@@ -76,12 +106,13 @@ Result cheat_query(MemoryInfo *out, u64 address) {
 }
 
 bool cheat_file_absent() {
-    struct stat info{}; errno = 0;
-    if (stat(kCheatPath, &info) == 0) {
+    FsDirEntryType type{};
+    Result rc = fsFsGetEntryType(&g_sd, kCheatPath, &type);
+    if (R_SUCCEEDED(rc)) {
         set_status("Stopped", "Cheat file exists; refusing debugger attach.");
         return false;
     }
-    if (errno != ENOENT) {
+    if (rc != MAKERESULT(Module_Fs, 1)) {
         set_status("Stopped", "Could not prove the exact cheat file is absent.");
         return false;
     }
@@ -96,10 +127,8 @@ bool readable_rx(u64 address, size_t size) {
 }
 
 bool run_snapshot() {
-    mkdir("sdmc:/switch/TheModdingOfIsaac", 0777);
-    g_log = std::fopen(kLogPath, "wb");
-    if (!g_log) { set_status("Stopped", "Cannot create module-overlay.log."); return false; }
-    std::fprintf(g_log, "IsaacModuleOverlay 0.1.0\nmode=read-only; no game memory writes or hooks\n");
+    if (!g_log_open) { set_status("Stopped", "Cannot open SD diagnostic log."); return false; }
+    log_printf("stage=snapshot_requested\nmode=read-only; no game memory writes or hooks\n");
 
     u64 pid = 0, title = 0;
     Result rc = pmdmntGetApplicationProcessId(&pid);
@@ -109,8 +138,8 @@ bool run_snapshot() {
     g_pminfo_open = true;
     rc = pminfoGetProgramId(&title, pid);
     if (R_FAILED(rc)) return fail_result("Cannot read application title", rc);
-    std::fprintf(g_log, "pid=0x%016" PRIX64 " title=%016" PRIX64 "\n", pid, title);
-    if (title != kTitleId) { set_status("Stopped", "Isaac is not the running application."); return false; }
+    log_printf("pid=0x%016" PRIX64 " title=%016" PRIX64 "\n", pid, title);
+    if (title != kTitleId) { set_status("Stopped", "Process identity differs; see log."); return false; }
 
     rc = ldrDmntInitialize();
     if (R_FAILED(rc)) return fail_result("Cannot open ldr:dmnt", rc);
@@ -122,7 +151,7 @@ bool run_snapshot() {
 
     const LoaderModuleInfo *loader = nullptr, *repentance = nullptr;
     for (s32 i = 0; i < count; ++i) {
-        std::fprintf(g_log, "module[%d] base=0x%016" PRIX64 " size=0x%016" PRIX64 "\n", i,
+        log_printf("module[%d] base=0x%016" PRIX64 " size=0x%016" PRIX64 "\n", i,
                      modules[i].base_address, modules[i].size);
         log_bid("module_bid", modules[i].build_id);
         if (std::memcmp(modules[i].build_id, kLoaderBid, 0x20) == 0) loader = &modules[i];
@@ -136,12 +165,12 @@ bool run_snapshot() {
     bool attached = false;
     rc = cheat_has_process(&attached);
     if (R_FAILED(rc)) return fail_result("Cannot inspect debugger state", rc);
-    std::fprintf(g_log, "preexisting_attachment=%s\n", attached ? "yes" : "no");
+    log_printf("preexisting_attachment=%s\n", attached ? "yes" : "no");
     if (!attached) {
         if (!cheat_file_absent()) return false;
         rc = cheat_force_open();
         if (R_FAILED(rc)) return fail_result("Cannot attach to verified Isaac process", rc);
-        std::fprintf(g_log, "attachment_created=yes\n");
+        log_printf("attachment_created=yes\n");
     }
 
     CheatMetadata metadata{};
@@ -169,18 +198,17 @@ bool run_snapshot() {
         if (R_FAILED(rc)) return fail_result("Cannot read a code window", rc);
         const bool same = std::memcmp(actual, w.bytes, sizeof(actual)) == 0;
         matched += same ? 1 : 0;
-        std::fprintf(g_log, "window=%s address=0x%016" PRIX64 " signature=%s bytes=", w.name, address, same ? "MATCH" : "MISMATCH");
-        for (u8 b : actual) std::fprintf(g_log, "%02X", b);
-        std::fputc('\n', g_log);
+        log_printf("window=%s address=0x%016" PRIX64 " signature=%s bytes=", w.name, address, same ? "MATCH" : "MISMATCH");
+        for (u8 b : actual) log_printf("%02X", b);
+        log_printf("\n");
     }
     if (matched != 4) { set_status("Stopped", "One or more code signatures differ; no patch is safe."); return false; }
     set_status("Success", "Both builds and all 4 code signatures match.");
-    std::fprintf(g_log, "result=success repentance_base=0x%016" PRIX64 "\n", repentance->base_address);
+    log_printf("result=success repentance_base=0x%016" PRIX64 "\n", repentance->base_address);
     return true;
 }
 
 void close_services() {
-    if (g_log) { std::fclose(g_log); g_log = nullptr; }
     if (g_cheat_open) { serviceClose(&g_cheat); g_cheat_open = false; }
     if (g_ldr_open) { ldrDmntExit(); g_ldr_open = false; }
     if (g_pminfo_open) { pminfoExit(); g_pminfo_open = false; }
@@ -190,20 +218,43 @@ void close_services() {
 class SnapshotGui : public tsl::Gui {
 public:
     tsl::elm::Element *createUI() override {
-        auto *frame = new tsl::elm::OverlayFrame("Isaac Module Snapshot", "read-only v0.1.0");
+        log_printf("stage=create_ui\n");
+        auto *frame = new tsl::elm::OverlayFrame("Isaac Module Snapshot", "diagnostic v0.2.0");
         auto *list = new tsl::elm::List();
-        list->addItem(new tsl::elm::ListItem(g_status));
-        list->addItem(new tsl::elm::ListItem(g_detail));
-        list->addItem(new tsl::elm::ListItem("Log: /switch/TheModdingOfIsaac/module-overlay.log"));
+        auto *status = new tsl::elm::ListItem("Ready");
+        auto *detail = new tsl::elm::ListItem("A: read modules; B: return");
+        auto *run = new tsl::elm::ListItem("Read Isaac modules");
+        run->setClickListener([status, detail](u64 keys) {
+            if (!(keys & HidNpadButton_A)) return false;
+            tsl::hlp::doWithSmSession([] { run_snapshot(); close_services(); });
+            status->setText(g_status);
+            detail->setText(g_detail);
+            return true;
+        });
+        list->addItem(run);
+        list->addItem(status);
+        list->addItem(detail);
         frame->setContent(list);
+        log_printf("stage=ui_created\n");
         return frame;
     }
+    void update() override {
+        if (!logged_frame) { log_printf("stage=first_frame\n"); logged_frame = true; }
+    }
+private:
+    bool logged_frame = false;
 };
 
 class SnapshotOverlay : public tsl::Overlay {
 public:
-    void initServices() override { run_snapshot(); close_services(); }
-    void exitServices() override { close_services(); }
+    void initServices() override { open_log(); }
+    void onShow() override { log_printf("stage=shown\n"); }
+    void exitServices() override {
+        close_services();
+        log_printf("stage=exit\n");
+        if (g_log_open) { fsFileClose(&g_log); g_log_open = false; }
+        if (g_sd_open) { fsFsClose(&g_sd); g_sd_open = false; }
+    }
     std::unique_ptr<tsl::Gui> loadInitialGui() override { return initially<SnapshotGui>(); }
 };
 
