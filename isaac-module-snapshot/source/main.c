@@ -227,6 +227,21 @@ static bool verify_bridge_contract(u64 base) {
         log_line("bridge_code=%s bytes=%zu sha256=%s", k_contract_code[i].name, size, match ? "MATCH" : "MISMATCH");
         if (!match) return fail_message("A complete bridge function/PLT differs from the verified build.");
     }
+    // Observe the live IsaacUpdate relocation without changing game memory.
+    if (base > UINT64_MAX - UINT64_C(0xAA5C20))
+        return fail_message("IsaacUpdate GOT address overflow.");
+    MemoryInfo isaac_got_mapping = {0};
+    const u64 isaac_got_address = base + UINT64_C(0xAA5C20);
+    Result isaac_got_result = cheat_query(&isaac_got_mapping, isaac_got_address);
+    if (R_FAILED(isaac_got_result))
+        return fail_result("query IsaacUpdate GOT mapping", isaac_got_result);
+    if (isaac_got_mapping.addr > isaac_got_address ||
+        isaac_got_address - isaac_got_mapping.addr > isaac_got_mapping.size ||
+        sizeof(u64) > isaac_got_mapping.size - (isaac_got_address - isaac_got_mapping.addr))
+        return fail_message("IsaacUpdate GOT slot crosses its mapping.");
+    log_line("bridge_isaac_update_got_permission=0x%08" PRIX32 " writable=%s",
+             (uint32_t)isaac_got_mapping.perm,
+             (isaac_got_mapping.perm & Perm_W) ? "yes" : "no");
     for (size_t i = 0; i < sizeof(k_contract_bindings) / sizeof(k_contract_bindings[0]); ++i) {
         if (base > UINT64_MAX - k_contract_bindings[i].got || base > UINT64_MAX - k_contract_bindings[i].target)
             return fail_message("Contract GOT address overflow.");
