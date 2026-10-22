@@ -61,14 +61,19 @@ uintptr_t g_main_base = 0;
 FILE* g_startup_log = nullptr;
 unsigned g_frame = 0;
 unsigned g_callback_count = 0;
-bool g_inside_hook = false;
+alignas(4) u32 g_hook_busy = 0;
 bool g_validation_failed = false;
 // Readable from a memory snapshot; no IPC is performed by worker diagnostics.
 // 1=waiting, 2=NRO verified, 3=GOT original, 4=installed,
-// 5=read-only GOT (not patched), 6=unexpected GOT, 7=timeout, 8=Lua success.
+// 5=read-only GOT, 6=unexpected GOT, 7=timeout, 8=Lua success, 9=Lua error.
 alignas(8) u32 g_bridge_stage = 0;
 void set_stage(u32 value) {
-    __atomic_store_n(&g_bridge_stage, value, __ATOMIC_RELEASE);
+    u32 old = __atomic_load_n(&g_bridge_stage, __ATOMIC_ACQUIRE);
+    do {
+        // A completed callback must not be overwritten by the installing worker.
+        if (old == 8 || old == 9) return;
+    } while (!__atomic_compare_exchange_n(&g_bridge_stage, &old, value, false,
+                                          __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
 }
 
 bool validate_image(uintptr_t base) {
@@ -198,6 +203,7 @@ void dispatch_lua_update() {
         trace(lua_tostring(g_lua, -1));
         lua_pop(g_lua, 1);
         g_callback_count = kCallbackLimit;
+        set_stage(9);
     } else if (g_callback_count == 1) {
         trace("IsaacLuaBridge: first in-game Lua callback completed");
         set_stage(8);
@@ -205,18 +211,20 @@ void dispatch_lua_update() {
 }
 
 extern "C" void isaac_update_hook() {
-    if (g_inside_hook || g_validation_failed) {
+    // Isaac's update thread must be the only Lua state owner.
+    // If this hook is entered recursively or concurrently, call the original only.
+    if (__atomic_exchange_n(&g_hook_busy, 1u, __ATOMIC_ACQUIRE) != 0 ||
+        g_validation_failed) {
         if (g_original_update) g_original_update();
         return;
     }
-    g_inside_hook = true;
 
     if (!g_original_update) {
         const uintptr_t caller = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
         if (!resolve_verified_original(caller)) {
             g_validation_failed = true;
             trace("IsaacLuaBridge: runtime contract mismatch; callback disabled");
-            g_inside_hook = false;
+            __atomic_store_n(&g_hook_busy, 0u, __ATOMIC_RELEASE);
             return;
         }
     }
@@ -224,7 +232,7 @@ extern "C" void isaac_update_hook() {
     g_original_update();
     ++g_frame;
     dispatch_lua_update();
-    g_inside_hook = false;
+    __atomic_store_n(&g_hook_busy, 0u, __ATOMIC_RELEASE);
 }
 
 [[noreturn]] void worker_exit() {
@@ -321,7 +329,7 @@ int main(int, char**) {
 
     g_startup_log = SaltySDCore_fopen(
         "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-startup.log", "wb");
-    trace("IsaacLuaBridge 0.3.4: verified loader route");
+    trace("IsaacLuaBridge 0.3.5: guarded frame callback");
     if (!prepare_lua()) {
         if (g_startup_log) SaltySDCore_fclose(g_startup_log);
         g_startup_log = nullptr;
@@ -347,6 +355,15 @@ int main(int, char**) {
         return 1;
     }
     trace("IsaacLuaBridge: main loader mapping verified");
+    // These addresses allow the existing read-only Snapshot NRO to confirm
+    // the callback without relying on IPC from the late worker/game thread.
+    char marker[112] = {};
+    std::snprintf(marker, sizeof(marker), "bridge_stage_address=0x%016llX",
+                  static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(&g_bridge_stage)));
+    trace(marker);
+    std::snprintf(marker, sizeof(marker), "bridge_hook_address=0x%016llX",
+                  static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(isaac_update_hook)));
+    trace(marker);
     Handle worker = INVALID_HANDLE;
     const Result worker_result = svcCreateThread(
         &worker, reinterpret_cast<void*>(bridge_worker), nullptr,
@@ -361,6 +378,11 @@ int main(int, char**) {
         g_startup_log = nullptr;
         return 1;
     }
+    // The worker must never touch the SaltySD startup file IPC after
+    // the plugin's main() returns. Close it *before* starting that thread.
+    trace("IsaacLuaBridge: NRO worker created; starting");
+    if (g_startup_log) SaltySDCore_fclose(g_startup_log);
+    g_startup_log = nullptr;
     const Result start_result = svcStartThread(worker);
     if (R_FAILED(start_result)) {
         char line[96] = {};
