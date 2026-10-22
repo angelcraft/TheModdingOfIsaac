@@ -1,14 +1,16 @@
--- Bridge runtime checks; no simulated Isaac entities or Specialist behavior.
-local callbacks = 0
-
+-- Native read candidate: identify collectible pedestals before collection.
+local previous = ""
 function on_update(frame)
-    assert(IsaacBridge.GetFrameCount() == frame, "callback frame mismatch")
-    if callbacks < 4 or callbacks % 600 == 0 then
-        local runtime = IsaacBridge.GetRuntimeState()
-        assert(runtime.target_verified, "unverified callback target")
-        assert(runtime.completed_callbacks == callbacks, "callback count mismatch")
-        assert(runtime.failed_callbacks == 0, "previous callback failure")
-        log("IsaacLuaBridge 0.4.0: continuous callback " .. (callbacks + 1))
+    if frame % 15 ~= 0 then return end
+    local room, reason = IsaacBridge.GetRoomCollectibles()
+    if not room then
+        if previous ~= reason then log("room read: " .. tostring(reason)); previous = reason end
+        return
     end
-    callbacks = callbacks + 1
+    local signature = tostring(room.manager_state) .. ":" .. table.concat(room.items, ",")
+    if signature ~= previous then
+        log("room collectibles: state=" .. room.manager_state .. " players=" ..
+            room.player_count .. " ids=" .. table.concat(room.items, ","))
+        previous = signature
+    end
 end

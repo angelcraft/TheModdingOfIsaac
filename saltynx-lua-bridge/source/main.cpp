@@ -121,6 +121,8 @@ int lua_log(lua_State* state) {
     return 0;
 }
 
+#include "pedestal_reader.h"
+
 void lua_instruction_limit(lua_State* state, lua_Debug*) {
     luaL_error(state, "IsaacLuaBridge: Lua instruction budget exceeded");
 }
@@ -133,7 +135,7 @@ int lua_get_frame_count(lua_State* state) {
 
 int lua_get_runtime_state(lua_State* state) {
     lua_createtable(state, 0, 7);
-    lua_pushliteral(state, "0.4.0");
+    lua_pushliteral(state, "0.5.0");
     lua_setfield(state, -2, "version");
     lua_pushliteral(state, "91C73FDD575061318D68886316AFEAC72388B2AB");
     lua_setfield(state, -2, "target_build_id");
@@ -158,6 +160,8 @@ void register_bridge_api(lua_State* state) {
     lua_setfield(state, -2, "GetFrameCount");
     lua_pushcfunction(state, lua_get_runtime_state);
     lua_setfield(state, -2, "GetRuntimeState");
+    lua_pushcfunction(state, lua_get_room_collectibles);
+    lua_setfield(state, -2, "GetRoomCollectibles");
     lua_setglobal(state, "IsaacBridge");
 }
 
@@ -419,7 +423,7 @@ int main(int, char**) {
 
     g_startup_log = SaltySDCore_fopen(
         "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-startup.log", "wb");
-    trace("IsaacLuaBridge 0.4.0: continuous Lua callbacks");
+    trace("IsaacLuaBridge 0.5.0: read-only pedestal API");
     if (!prepare_lua()) {
         if (g_startup_log) SaltySDCore_fclose(g_startup_log);
         g_startup_log = nullptr;
@@ -456,6 +460,9 @@ int main(int, char**) {
     trace(marker);
     std::snprintf(marker, sizeof(marker), "bridge_runtime_address=0x%016llX",
                   static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(&g_runtime)));
+    trace(marker);
+    std::snprintf(marker, sizeof(marker), "bridge_pedestal_address=0x%016llX",
+                  static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(&g_pedestal)));
     trace(marker);
     Handle worker = INVALID_HANDLE;
     const Result worker_result = svcCreateThread(

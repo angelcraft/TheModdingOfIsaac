@@ -57,6 +57,7 @@ static u64 g_loader_run_pointer;
 static u64 g_bridge_stage_address;
 static u64 g_bridge_hook_address;
 static u64 g_bridge_runtime_address;
+static u64 g_bridge_pedestal_address;
 static bool g_bridge_hook_observed;
 static bool g_unexpected_bindings;
 
@@ -106,6 +107,8 @@ static void load_bridge_marker(void) {
             g_bridge_hook_address = parsed;
         else if (sscanf(line, "bridge_runtime_address=0x%" SCNx64, &parsed) == 1)
             g_bridge_runtime_address = parsed;
+        else if (sscanf(line, "bridge_pedestal_address=0x%" SCNx64, &parsed) == 1)
+            g_bridge_pedestal_address = parsed;
     }
     fclose(file);
     log_line("bridge_marker=%s", (g_bridge_stage_address && g_bridge_hook_address)
@@ -147,6 +150,38 @@ static void report_runtime_counters(void) {
     }
 }
 
+static void report_pedestal_state(void) {
+    if (!g_bridge_pedestal_address) return;
+    struct { u32 magic, version, contract, scans, failures, state;
+             u32 entities, players, pedestals, peak, first_id, last_id; } p = {0};
+    _Static_assert(sizeof(p) == 48, "Pedestal witness layout");
+    MemoryInfo m = {0};
+    Result rc = cheat_query(&m, g_bridge_pedestal_address);
+    if (R_FAILED(rc) || !(m.perm & Perm_R) || m.addr > g_bridge_pedestal_address ||
+        g_bridge_pedestal_address - m.addr > m.size ||
+        sizeof(p) > m.size - (g_bridge_pedestal_address - m.addr)) {
+        log_line("bridge_pedestal=unknown (witness inaccessible)");
+        return;
+    }
+    rc = cheat_read(g_bridge_pedestal_address, &p, sizeof(p));
+    if (R_FAILED(rc) || p.magic != 0x50454431u || p.version != 1u) {
+        log_line("bridge_pedestal=unknown (signature mismatch)");
+        return;
+    }
+    log_line("bridge_pedestal_contract=%" PRIu32 " scans=%" PRIu32 " read_failures=%" PRIu32,
+             p.contract, p.scans, p.failures);
+    log_line("bridge_game_state=%" PRIu32 " entities=%" PRIu32 " players=%" PRIu32,
+             p.state,p.entities,p.players);
+    log_line("bridge_pedestal_current=%" PRIu32 " peak=%" PRIu32 " first_id=%" PRIu32 " last_seen_id=%" PRIu32,
+             p.pedestals,p.peak,p.first_id,p.last_id);
+    if (g_bridge_hook_observed && p.contract == 1 && p.scans && p.peak && p.last_id) {
+        log_line("bridge_pedestal_candidate=OBSERVED (quality/visibility unverified)");
+        printf("Pedestal candidate observed: item %" PRIu32 ".\n", p.last_id);
+    } else {
+        log_line("bridge_pedestal_candidate=NOT_CONFIRMED");
+    }
+}
+
 static void report_bridge_stage(void) {
     if (!g_bridge_stage_address) {
         log_line("bridge_callback=unknown (stage address unavailable)");
@@ -182,6 +217,7 @@ static void report_bridge_stage(void) {
         return;
     }
     report_runtime_counters();
+    report_pedestal_state();
     log_line("bridge_stage=%" PRIu32 " bridge_got_hook=%s",
              (uint32_t)stage, g_bridge_hook_observed ? "yes" : "no");
     if (stage == 8 && g_bridge_hook_observed) {
@@ -565,7 +601,7 @@ static bool prepare_log(void) {
         printf("Cannot open log (errno %d).\n", errno);
         return false;
     }
-    log_line("IsaacModuleSnapshot 0.4.0 - continuous callback witness");
+    log_line("IsaacModuleSnapshot 0.5.0 - pedestal read witness");
     log_line("observation=bounded executable headers; game memory is never written");
     return true;
 }
