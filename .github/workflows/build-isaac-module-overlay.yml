@@ -21,6 +21,17 @@ jobs:
           git -C isaac-module-overlay/libs/libtesla checkout f766e9b607a05e9756843cbd62b3bfb98be1646c
       - name: Build overlay
         run: make -C isaac-module-overlay -j2
+      - name: Resolve reported crash offsets
+        run: |
+          mkdir -p debug
+          aarch64-none-elf-addr2line -a -f -C -e isaac-module-overlay/IsaacModuleSnapshot.elf 0x36dd4 0x36dc8 0x5f14 0x6adc 0xa60c 0x54c 0x500 | tee debug/crash-symbols.txt
+          aarch64-none-elf-readelf -n isaac-module-overlay/IsaacModuleSnapshot.elf > debug/build-id.txt
+          cp isaac-module-overlay/IsaacModuleSnapshot.elf debug/
+          cp isaac-module-overlay/build/*.map debug/ || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IsaacModuleSnapshot-Debug
+          path: debug
       - name: Package SD layout
         run: |
           mkdir -p artifact/switch/.overlays
