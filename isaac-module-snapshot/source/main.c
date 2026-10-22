@@ -57,6 +57,7 @@ static u64 g_loader_run_pointer;
 static u64 g_bridge_stage_address;
 static u64 g_bridge_hook_address;
 static bool g_bridge_hook_observed;
+static bool g_unexpected_bindings;
 
 static void log_line(const char *format, ...) {
     if (!g_log) return;
@@ -333,13 +334,20 @@ static bool verify_bridge_contract(u64 base) {
         log_line("bridge_binding=%s actual=0x%016" PRIX64 " expected=0x%016" PRIX64 " result=%s",
                  k_contract_bindings[i].name, (uint64_t)pointer, (uint64_t)expected,
                  match ? "MATCH" : (is_our_hook ? "EXPECTED_HOOK" : "OTHER"));
-        if (!match && !is_our_hook)
-            return fail_message("A live function binding differs from the expected original or bridge hook.");
+        if (!match && !is_our_hook) {
+            // A secondary import may point at a resolver or another valid
+            // module-specific target. Preserve the mismatch instead of
+            // abandoning the independent callback-stage observation.
+            g_unexpected_bindings = true;
+            log_line("bridge_binding_warning=%s unexpected_target=0x%016" PRIX64,
+                     k_contract_bindings[i].name, (uint64_t)pointer);
+        }
     }
     ++g_verified_repentance;
-    log_line("bridge_observation=%s",
+    log_line("bridge_observation=%s secondary_binding_warnings=%s",
              g_bridge_hook_observed ? "expected_bridge_hook_observed" :
-             "code_and_original_bindings_match; no hook installed");
+             "IsaacUpdate_not_hooked",
+             g_unexpected_bindings ? "yes" : "no");
     return true;
 }
 
@@ -491,8 +499,10 @@ static bool take_snapshot(void) {
     log_loader_got(&before);
     load_bridge_marker();
     size_t readable_regions = 0, nro_regions = 0;
-    if (!snapshot_mappings(&readable_regions, &nro_regions)) return false;
+    const bool snapshot_ok = snapshot_mappings(&readable_regions, &nro_regions);
+    // Inspect callback state even if a later, unrelated observation failed.
     report_bridge_stage();
+    if (!snapshot_ok) return false;
     rc = cheat_metadata(&after);
     if (R_FAILED(rc)) return fail_result("read final process metadata", rc);
     if (!verify_metadata(&after, pid, &loader)) return false;
@@ -520,7 +530,7 @@ static bool prepare_log(void) {
         printf("Cannot open log (errno %d).\n", errno);
         return false;
     }
-    log_line("IsaacModuleSnapshot 0.3.0 - callback witness");
+    log_line("IsaacModuleSnapshot 0.3.1 - callback witness");
     log_line("observation=bounded executable headers; game memory is never written");
     return true;
 }
@@ -534,7 +544,8 @@ int main(int argc, char **argv) {
     bool ok = prepare_log();
     if (ok) ok = take_snapshot();
     if (g_log) {
-        log_line("result=%s", ok ? "success" : "stopped; partial diagnostics only");
+        log_line("result=%s", !ok ? "stopped; partial diagnostics only" :
+                 (g_unexpected_bindings ? "observation_complete_with_binding_warnings" : "success"));
         const bool write_failed = ferror(g_log) != 0;
         const int close_result = fclose(g_log);
         g_log = NULL;
