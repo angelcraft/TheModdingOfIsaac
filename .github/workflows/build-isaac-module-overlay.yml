@@ -24,8 +24,8 @@ jobs:
       - name: Resolve reported crash offsets
         run: |
           mkdir -p debug
-          aarch64-none-elf-addr2line -a -f -C -e isaac-module-overlay/IsaacModuleSnapshot.elf 0x36dd4 0x36dc8 0x5f14 0x6adc 0xa60c 0x54c 0x500 | tee debug/crash-symbols.txt
-          aarch64-none-elf-readelf -n isaac-module-overlay/IsaacModuleSnapshot.elf > debug/build-id.txt
+          /opt/devkitpro/devkitA64/bin/aarch64-none-elf-addr2line -a -f -C -e isaac-module-overlay/IsaacModuleSnapshot.elf 0x36dd4 0x36dc8 0x5f14 0x6adc 0xa60c 0x54c 0x500 | tee debug/crash-symbols.txt
+          /opt/devkitpro/devkitA64/bin/aarch64-none-elf-readelf -n isaac-module-overlay/IsaacModuleSnapshot.elf > debug/build-id.txt
           cp isaac-module-overlay/IsaacModuleSnapshot.elf debug/
           cp isaac-module-overlay/build/*.map debug/ || true
       - uses: actions/upload-artifact@v4
