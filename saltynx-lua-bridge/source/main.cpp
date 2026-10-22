@@ -10,6 +10,9 @@ extern "C" {
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 
 namespace {
@@ -19,6 +22,8 @@ constexpr uintptr_t kIsaacUpdateOffset = 0x3B37F0;
 constexpr uintptr_t kMinimumTextSize = kCallerReturnOffset + 8;
 constexpr size_t kMaxScriptBytes = 256 * 1024;
 constexpr unsigned kCallbackLimit = 3;
+constexpr const char* kTelemetryHost = "10.10.0.165";
+constexpr unsigned kTelemetryPort = 47821;
 
 // Query the actual mapping of each read; text and GOT live in different mappings.
 bool readable_range(uintptr_t address, size_t length) {
@@ -235,6 +240,54 @@ extern "C" void isaac_update_hook() {
     __atomic_store_n(&g_hook_busy, 0u, __ATOMIC_RELEASE);
 }
 
+// Network IPC only runs on the background worker thread, NEVER on Isaac's
+// game update thread. Failure of networking must not disable Lua/the game.
+struct Telemetry {
+    int fd = -1;
+    sockaddr_in destination = {};
+};
+
+Telemetry telemetry_open() {
+    Telemetry result;
+    // The network service may be unavailable in the injected title.
+    if (R_FAILED(socketInitializeDefault())) return result;
+    result.fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (result.fd < 0) return result;
+    result.destination.sin_family = AF_INET;
+    result.destination.sin_port = htons(static_cast<u16>(kTelemetryPort));
+    result.destination.sin_addr.s_addr = inet_addr(kTelemetryHost);
+    return result;
+}
+
+void telemetry_send(const Telemetry& t, const char* event) {
+    if (t.fd < 0 || !event) return;
+    char message[176] = {};
+    const int n = std::snprintf(message, sizeof(message), "ILB1|%s", event);
+    if (n <= 0 || n >= static_cast<int>(sizeof(message))) return;
+    sendto(t.fd, message, static_cast<size_t>(n), 0,
+           reinterpret_cast<const sockaddr*>(&t.destination),
+           sizeof(t.destination));
+}
+
+// Sends only state changes + one heartbeat each 10 seconds.
+// Continuous telemetry is separate from the original IsaacUpdate dispatch.
+[[noreturn]] void telemetry_follow(const Telemetry& t) {
+    u32 last = 0xFFFFFFFFu;
+    unsigned ticks = 0;
+    for (;;) {
+        const u32 stage = __atomic_load_n(&g_bridge_stage, __ATOMIC_ACQUIRE);
+        if (stage != last || ticks >= 10) {
+            char event[96] = {};
+            std::snprintf(event, sizeof(event), "event=bridge_status stage=%u", stage);
+            telemetry_send(t, event);
+            last = stage;
+            ticks = 0;
+        }
+        ++ticks;
+        svcSleepThread(1000 * 1000 * 1000LL);
+    }
+}
+
 [[noreturn]] void worker_exit() {
     svcExitThread();
     for (;;) {}
@@ -242,10 +295,14 @@ extern "C" void isaac_update_hook() {
 
 void bridge_worker(void*) {
     set_stage(1);
+    const Telemetry t = telemetry_open();
+    telemetry_send(t, "event=worker_started stage=1");
     // The verified main loader slot supplies the late NRO base directly.
     // SaltySDCore_getCodeStart() points at rtld; main follows its 0x4000 mapping.
-    if (!g_main_base || g_main_base > UINTPTR_MAX - 0x10CC78)
+    if (!g_main_base || g_main_base > UINTPTR_MAX - 0x10CC78) {
+        telemetry_send(t, "event=main_module_unavailable");
         worker_exit();
+    }
     const uintptr_t loader_slot = g_main_base + 0x10CC78;
     for (unsigned attempt = 0; attempt < 4800; ++attempt) {
         if (readable_range(loader_slot, sizeof(uintptr_t))) {
@@ -255,6 +312,7 @@ void bridge_worker(void*) {
                 const uintptr_t base = entry - 0x4C0840;
                 if (validate_image(base)) {
                     set_stage(2);
+                    telemetry_send(t, "event=repentance_verified stage=2");
                     const uintptr_t got = base + 0xAA5C20;
                     MemoryInfo got_info = {};
                     u32 page_info = 0;
@@ -265,10 +323,12 @@ void bridge_worker(void*) {
                         void* actual = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
                         if (actual == expected) {
                             set_stage(3);
+                            telemetry_send(t, "event=original_got_verified stage=3");
                             g_original_update = reinterpret_cast<IsaacUpdate>(expected);
                             void* replacement = reinterpret_cast<void*>(isaac_update_hook);
                             if (!(got_info.perm & Perm_W)) {
                                 set_stage(5);
+                                telemetry_send(t, "event=got_readonly stage=5");
                                 worker_exit();
                             }
                             if (__atomic_compare_exchange_n(slot, &expected, replacement,
@@ -276,6 +336,10 @@ void bridge_worker(void*) {
                                                             __ATOMIC_ACQUIRE)) {
                                 set_stage(4);
                                 trace("IsaacLuaBridge: verified IsaacUpdate GOT installed");
+                                telemetry_send(t, "event=hook_installed stage=4");
+                                // The worker stays alive for status updates from
+                                // the game thread, including callback success.
+                                telemetry_follow(t);
                             } else {
                                 set_stage(6);
                             }
@@ -292,6 +356,7 @@ void bridge_worker(void*) {
         svcSleepThread(25 * 1000 * 1000LL);
     }
     set_stage(7);
+    telemetry_send(t, "event=nro_timeout stage=7");
     trace("IsaacLuaBridge: Repentance loader wait timed out");
     worker_exit();
 }
@@ -329,7 +394,7 @@ int main(int, char**) {
 
     g_startup_log = SaltySDCore_fopen(
         "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-startup.log", "wb");
-    trace("IsaacLuaBridge 0.3.5: guarded frame callback");
+    trace("IsaacLuaBridge 0.3.6: guarded frame callback + LAN events");
     if (!prepare_lua()) {
         if (g_startup_log) SaltySDCore_fclose(g_startup_log);
         g_startup_log = nullptr;
