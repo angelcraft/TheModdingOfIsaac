@@ -316,28 +316,41 @@ int main(int, char**) {
 
     g_startup_log = SaltySDCore_fopen(
         "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-startup.log", "wb");
-    trace("IsaacLuaBridge 0.3.2: preparing guarded frame callback");
+    trace("IsaacLuaBridge 0.3.3: diagnosing worker startup");
     if (!prepare_lua()) {
         if (g_startup_log) SaltySDCore_fclose(g_startup_log);
         g_startup_log = nullptr;
         return 1;
     }
 
-    // Close startup IPC output before publishing work to another thread.
-    if (g_startup_log) SaltySDCore_fclose(g_startup_log);
-    g_startup_log = nullptr;
     Handle worker = INVALID_HANDLE;
     const Result worker_result = svcCreateThread(
         &worker, reinterpret_cast<void*>(bridge_worker), nullptr,
         g_worker_stack + sizeof(g_worker_stack), 0x2C, -2);
-    if (R_FAILED(worker_result) || R_FAILED(svcStartThread(worker))) {
-        trace("IsaacLuaBridge: could not start NRO wait thread");
+    if (R_FAILED(worker_result)) {
+        char line[96] = {};
+        std::snprintf(line, sizeof(line),
+                      "IsaacLuaBridge: worker create failed rc=0x%08X",
+                      static_cast<unsigned>(worker_result));
+        trace(line);
         if (g_startup_log) SaltySDCore_fclose(g_startup_log);
         g_startup_log = nullptr;
         return 1;
     }
-    trace("IsaacLuaBridge: verified NRO wait thread started");
-
+    const Result start_result = svcStartThread(worker);
+    if (R_FAILED(start_result)) {
+        char line[96] = {};
+        std::snprintf(line, sizeof(line),
+                      "IsaacLuaBridge: worker start failed rc=0x%08X",
+                      static_cast<unsigned>(start_result));
+        trace(line);
+        svcCloseHandle(worker);
+        if (g_startup_log) SaltySDCore_fclose(g_startup_log);
+        g_startup_log = nullptr;
+        return 1;
+    }
+    svcCloseHandle(worker);
+    trace("IsaacLuaBridge: NRO wait thread started");
     if (g_startup_log) SaltySDCore_fclose(g_startup_log);
     g_startup_log = nullptr;
     return 0;
