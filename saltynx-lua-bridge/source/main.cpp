@@ -11,11 +11,6 @@ extern "C" {
 #include <cstdio>
 #include <cstring>
 
-extern "C" {
-Result SaltySD_Init() __attribute__((weak));
-Result SaltySD_Deinit() __attribute__((weak));
-void SaltySDCore_ReplaceModuleImport(void*, const char*, void*, bool) __attribute__((weak));
-}
 
 namespace {
 constexpr u64 kExpectedTitleId = 0x010021C000B6A000ULL;
@@ -24,6 +19,16 @@ constexpr uintptr_t kIsaacUpdateOffset = 0x3B37F0;
 constexpr uintptr_t kMinimumTextSize = kCallerReturnOffset + 8;
 constexpr size_t kMaxScriptBytes = 256 * 1024;
 constexpr unsigned kCallbackLimit = 3;
+
+// Query the actual mapping of each read; text and GOT live in different mappings.
+bool readable_range(uintptr_t address, size_t length) {
+    MemoryInfo info = {};
+    u32 page_info = 0;
+    if (!length || R_FAILED(svcQueryMemory(&info, &page_info, address)) ||
+        !(info.perm & Perm_R) || address < info.addr) return false;
+    const uintptr_t offset = address - info.addr;
+    return offset < info.size && length <= info.size - offset;
+}
 
 const u8 kExpectedBuildId[0x20] = {
     0x91, 0xC7, 0x3F, 0xDD, 0x57, 0x50, 0x61, 0x31,
@@ -57,15 +62,23 @@ unsigned g_frame = 0;
 unsigned g_callback_count = 0;
 bool g_inside_hook = false;
 bool g_validation_failed = false;
-bool g_runtime_result_written = false;
+// Readable from a memory snapshot; no IPC is performed by worker diagnostics.
+// 1=waiting, 2=NRO verified, 3=GOT original, 4=installed,
+// 5=read-only GOT (not patched), 6=unexpected GOT, 7=timeout, 8=Lua success.
+alignas(8) u32 g_bridge_stage = 0;
+void set_stage(u32 value) {
+    __atomic_store_n(&g_bridge_stage, value, __ATOMIC_RELEASE);
+}
 
 bool validate_image(uintptr_t base) {
     MemoryInfo info = {};
     u32 page_info = 0;
     if (R_FAILED(svcQueryMemory(&info, &page_info, base)) ||
         info.addr != base || !(info.perm & Perm_X) || info.size < kMinimumTextSize ||
-        base > UINTPTR_MAX - info.size ||
-        base + info.size < base + 0xAA5C20 + sizeof(void*)) return false;
+        base > UINTPTR_MAX - 0xAA5C20 - sizeof(void*) ||
+        !readable_range(base, 0x60) ||
+        !readable_range(base + kIsaacUpdateOffset, sizeof(kExpectedIsaacUpdate)) ||
+        !readable_range(base + kCallerReturnOffset - 4, sizeof(kExpectedCallBoundary))) return false;
     const u8* image = reinterpret_cast<const u8*>(base);
     return std::memcmp(image + 0x10, "NRO0", 4) == 0 &&
         std::memcmp(image + 0x40, kExpectedBuildId, sizeof(kExpectedBuildId)) == 0 &&
@@ -84,17 +97,6 @@ void trace(const char* message) {
     }
 }
 
-void worker_trace(const char* message) {
-    if (!message || !SaltySD_Init || !SaltySD_Deinit || R_FAILED(SaltySD_Init())) return;
-    FILE* file = SaltySDCore_fopen(
-        "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-worker.log", "ab");
-    if (file) {
-        SaltySDCore_fwrite(message, 1, std::strlen(message), file);
-        SaltySDCore_fwrite("\n", 1, 1, file);
-        SaltySDCore_fclose(file);
-    }
-    SaltySD_Deinit();
-}
 
 int lua_log(lua_State* state) {
     const char* message = lua_tostring(state, 1);
@@ -197,25 +199,15 @@ void dispatch_lua_update() {
         g_callback_count = kCallbackLimit;
     } else if (g_callback_count == 1) {
         trace("IsaacLuaBridge: first in-game Lua callback completed");
-        if (!g_runtime_result_written && SaltySD_Init && SaltySD_Deinit &&
-            R_SUCCEEDED(SaltySD_Init())) {
-            FILE* result = SaltySDCore_fopen(
-                "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-runtime.log", "wb");
-            if (result) {
-                const char* message =
-                    "contract=verified\noriginal_isaac_update=called\n"
-                    "lua_on_update=success\ncallback_limit=3\n";
-                SaltySDCore_fwrite(message, 1, std::strlen(message), result);
-                SaltySDCore_fclose(result);
-                g_runtime_result_written = true;
-            }
-            SaltySD_Deinit();
-        }
+        set_stage(8);
     }
 }
 
 extern "C" void isaac_update_hook() {
-    if (g_inside_hook || g_validation_failed) return;
+    if (g_inside_hook || g_validation_failed) {
+        if (g_original_update) g_original_update();
+        return;
+    }
     g_inside_hook = true;
 
     if (!g_original_update) {
@@ -240,6 +232,7 @@ extern "C" void isaac_update_hook() {
 }
 
 void bridge_worker(void*) {
+    set_stage(1);
     for (unsigned attempt = 0; attempt < 1200; ++attempt) {
         uintptr_t address = 0;
         while (true) {
@@ -249,43 +242,33 @@ void bridge_worker(void*) {
             const uintptr_t next = info.addr + info.size;
             if ((info.perm & Perm_X) && info.size >= kMinimumTextSize &&
                 validate_image(info.addr)) {
-                worker_trace("nro=verified");
+                set_stage(2);
                 const uintptr_t got = info.addr + 0xAA5C20;
                 MemoryInfo got_info = {};
-                if (R_SUCCEEDED(svcQueryMemory(&got_info, &page_info, got))) {
+                if (R_SUCCEEDED(svcQueryMemory(&got_info, &page_info, got)) &&
+                    readable_range(got, sizeof(void*))) {
                     void** slot = reinterpret_cast<void**>(got);
                     void* expected = reinterpret_cast<void*>(info.addr + kIsaacUpdateOffset);
                     if (*slot == expected) {
-                        worker_trace("got=original");
+                        set_stage(3);
                         g_original_update = reinterpret_cast<IsaacUpdate>(expected);
                         void* replacement = reinterpret_cast<void*>(isaac_update_hook);
                         if (got_info.perm & Perm_W) {
-                            worker_trace("patch=direct-write");
                             __atomic_store_n(slot, replacement, __ATOMIC_RELEASE);
-                        } else if (SaltySD_Init && SaltySD_Deinit &&
-                                   SaltySDCore_ReplaceModuleImport &&
-                                   R_SUCCEEDED(SaltySD_Init())) {
-                            FILE* stage = SaltySDCore_fopen(
-                                "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-worker.log", "ab");
-                            if (stage) {
-                                const char* message = "patch=saltysd\n";
-                                SaltySDCore_fwrite(message, 1, std::strlen(message), stage);
-                                SaltySDCore_fclose(stage);
-                            }
-                            SaltySDCore_ReplaceModuleImport(
-                                reinterpret_cast<void*>(info.addr),
-                                "_ZN15IsaacRepentance11IsaacUpdateEv",
-                                replacement, true);
-                            SaltySD_Deinit();
+                        } else {
+                            // The startup service has ended. Never reconnect its shared
+                            // handle or bypass page protections from this worker.
+                            set_stage(5);
+                            worker_exit();
                         }
                         if (*slot == replacement) {
-                            worker_trace("got=replaced");
+                            set_stage(4);
                             trace("IsaacLuaBridge: verified IsaacUpdate GOT installed");
                         } else {
-                            worker_trace("got=unchanged");
+                            set_stage(6);
                         }
                     } else {
-                        worker_trace("got=unexpected");
+                        set_stage(6);
                     }
                 }
                 worker_exit();
@@ -295,6 +278,7 @@ void bridge_worker(void*) {
         }
         svcSleepThread(25 * 1000 * 1000LL);
     }
+    set_stage(7);
     trace("IsaacLuaBridge: Repentance NRO wait timed out");
     worker_exit();
 }
@@ -332,13 +316,16 @@ int main(int, char**) {
 
     g_startup_log = SaltySDCore_fopen(
         "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-startup.log", "wb");
-    trace("IsaacLuaBridge 0.3.1: preparing guarded frame callback");
+    trace("IsaacLuaBridge 0.3.2: preparing guarded frame callback");
     if (!prepare_lua()) {
         if (g_startup_log) SaltySDCore_fclose(g_startup_log);
         g_startup_log = nullptr;
         return 1;
     }
 
+    // Close startup IPC output before publishing work to another thread.
+    if (g_startup_log) SaltySDCore_fclose(g_startup_log);
+    g_startup_log = nullptr;
     Handle worker = INVALID_HANDLE;
     const Result worker_result = svcCreateThread(
         &worker, reinterpret_cast<void*>(bridge_worker), nullptr,
