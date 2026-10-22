@@ -1,0 +1,48 @@
+name: Build Isaac module snapshot overlay
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'isaac-module-overlay/**'
+      - '.github/workflows/build-isaac-module-overlay.yml'
+  pull_request:
+    paths:
+      - 'isaac-module-overlay/**'
+      - '.github/workflows/build-isaac-module-overlay.yml'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkita64:20260219
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned libtesla
+        run: |
+          git clone https://github.com/WerWolv/libtesla.git isaac-module-overlay/libs/libtesla
+          git -C isaac-module-overlay/libs/libtesla checkout f766e9b607a05e9756843cbd62b3bfb98be1646c
+      - name: Build overlay
+        run: make -C isaac-module-overlay -j2
+      - name: Resolve reported crash offsets
+        run: |
+          mkdir -p debug
+          /opt/devkitpro/devkitA64/bin/aarch64-none-elf-addr2line -a -f -C -e isaac-module-overlay/IsaacModuleSnapshot.elf 0x36dd4 0x36dc8 0x5f14 0x6adc 0xa60c 0x54c 0x500 | tee debug/crash-symbols.txt
+          /opt/devkitpro/devkitA64/bin/aarch64-none-elf-readelf -n isaac-module-overlay/IsaacModuleSnapshot.elf > debug/build-id.txt
+          cp isaac-module-overlay/IsaacModuleSnapshot.elf debug/
+          cp isaac-module-overlay/build/*.map debug/ || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IsaacModuleSnapshot-Debug
+          path: debug
+      - name: Package SD layout
+        run: |
+          mkdir -p artifact/switch/.overlays
+          cp isaac-module-overlay/IsaacModuleSnapshot.ovl artifact/switch/.overlays/
+          cp isaac-module-overlay/README.md artifact/
+          cd artifact
+          sha256sum switch/.overlays/IsaacModuleSnapshot.ovl > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IsaacModuleSnapshot-Overlay-SD
+          path: artifact
+          include-hidden-files: true
+          if-no-files-found: error
+
