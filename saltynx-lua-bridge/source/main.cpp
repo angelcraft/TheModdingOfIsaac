@@ -1,6 +1,5 @@
 #include <switch_min.h>
 #include <saltysd/saltysd_core.h>
-#include <saltysd/saltysd_dynamic.h>
 
 extern "C" {
 #include <lua.h>
@@ -15,6 +14,7 @@ extern "C" {
 extern "C" {
 Result SaltySD_Init() __attribute__((weak));
 Result SaltySD_Deinit() __attribute__((weak));
+void SaltySDCore_ReplaceModuleImport(void*, const char*, void*, bool) __attribute__((weak));
 }
 
 namespace {
@@ -232,14 +232,25 @@ void bridge_worker(void*) {
                 validate_image(info.addr)) {
                 const uintptr_t got = info.addr + 0xAA5C20;
                 MemoryInfo got_info = {};
-                if (R_SUCCEEDED(svcQueryMemory(&got_info, &page_info, got)) &&
-                    (got_info.perm & Perm_W)) {
+                if (R_SUCCEEDED(svcQueryMemory(&got_info, &page_info, got))) {
                     void** slot = reinterpret_cast<void**>(got);
                     void* expected = reinterpret_cast<void*>(info.addr + kIsaacUpdateOffset);
                     if (*slot == expected) {
                         g_original_update = reinterpret_cast<IsaacUpdate>(expected);
-                        __atomic_store_n(slot, reinterpret_cast<void*>(isaac_update_hook), __ATOMIC_RELEASE);
-                        trace("IsaacLuaBridge: verified IsaacUpdate GOT installed");
+                        void* replacement = reinterpret_cast<void*>(isaac_update_hook);
+                        if (got_info.perm & Perm_W) {
+                            __atomic_store_n(slot, replacement, __ATOMIC_RELEASE);
+                        } else if (SaltySD_Init && SaltySD_Deinit &&
+                                   SaltySDCore_ReplaceModuleImport &&
+                                   R_SUCCEEDED(SaltySD_Init())) {
+                            SaltySDCore_ReplaceModuleImport(
+                                reinterpret_cast<void*>(info.addr),
+                                "_ZN15IsaacRepentance11IsaacUpdateEv",
+                                replacement, true);
+                            SaltySD_Deinit();
+                        }
+                        if (*slot == replacement)
+                            trace("IsaacLuaBridge: verified IsaacUpdate GOT installed");
                     }
                 }
                 return;
