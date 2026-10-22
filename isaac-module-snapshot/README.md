@@ -1,4 +1,12 @@
-# IsaacModuleSnapshot
+# IsaacModuleSnapshot 0.3.0 — callback witness
+
+Esta rama amplía el lector ya existente (no crea una herramienta nueva).
+Si IsaacLuaBridge 0.3.5 también está instalado, lee las direcciones de estado
+que dejó en `bridge-startup.log`, verifica la entrada GOT de IsaacUpdate y
+muestra `Lua on_update(): SUCCESS!` solo si el hook esperado sigue instalado
+y el estado indica que Lua completó su primer callback. El log añade
+`bridge_stage`, `bridge_got_hook` y `bridge_callback`.
+Un resultado no confirmado NO demuestra que el hook funcione.
 
 Diagnóstico independiente para observar los módulos cargados por Isaac en la
 Switch. Genera un archivo de texto; todavía no ejecuta el mod ni expone la API de
