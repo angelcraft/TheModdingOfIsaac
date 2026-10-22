@@ -57,6 +57,7 @@ alignas(0x1000) char g_worker_stack[0x4000];
 void* g_original_lr = nullptr;
 lua_State* g_lua = nullptr;
 IsaacUpdate g_original_update = nullptr;
+uintptr_t g_main_base = 0;
 FILE* g_startup_log = nullptr;
 unsigned g_frame = 0;
 unsigned g_callback_count = 0;
@@ -233,53 +234,57 @@ extern "C" void isaac_update_hook() {
 
 void bridge_worker(void*) {
     set_stage(1);
-    for (unsigned attempt = 0; attempt < 1200; ++attempt) {
-        uintptr_t address = 0;
-        while (true) {
-            MemoryInfo info = {};
-            u32 page_info = 0;
-            if (R_FAILED(svcQueryMemory(&info, &page_info, address))) break;
-            const uintptr_t next = info.addr + info.size;
-            if ((info.perm & Perm_X) && info.size >= kMinimumTextSize &&
-                validate_image(info.addr)) {
-                set_stage(2);
-                const uintptr_t got = info.addr + 0xAA5C20;
-                MemoryInfo got_info = {};
-                if (R_SUCCEEDED(svcQueryMemory(&got_info, &page_info, got)) &&
-                    readable_range(got, sizeof(void*))) {
-                    void** slot = reinterpret_cast<void**>(got);
-                    void* expected = reinterpret_cast<void*>(info.addr + kIsaacUpdateOffset);
-                    if (*slot == expected) {
-                        set_stage(3);
-                        g_original_update = reinterpret_cast<IsaacUpdate>(expected);
-                        void* replacement = reinterpret_cast<void*>(isaac_update_hook);
-                        if (got_info.perm & Perm_W) {
-                            __atomic_store_n(slot, replacement, __ATOMIC_RELEASE);
-                        } else {
-                            // The startup service has ended. Never reconnect its shared
-                            // handle or bypass page protections from this worker.
-                            set_stage(5);
-                            worker_exit();
-                        }
-                        if (*slot == replacement) {
-                            set_stage(4);
-                            trace("IsaacLuaBridge: verified IsaacUpdate GOT installed");
+    // The verified main loader slot supplies the late NRO base directly.
+    // SaltySDCore_getCodeStart() points at rtld; main follows its 0x4000 mapping.
+    if (!g_main_base || g_main_base > UINTPTR_MAX - 0x10CC78)
+        worker_exit();
+    const uintptr_t loader_slot = g_main_base + 0x10CC78;
+    for (unsigned attempt = 0; attempt < 4800; ++attempt) {
+        if (readable_range(loader_slot, sizeof(uintptr_t))) {
+            const uintptr_t entry = __atomic_load_n(
+                reinterpret_cast<uintptr_t*>(loader_slot), __ATOMIC_ACQUIRE);
+            if (entry >= 0x4C0840) {
+                const uintptr_t base = entry - 0x4C0840;
+                if (validate_image(base)) {
+                    set_stage(2);
+                    const uintptr_t got = base + 0xAA5C20;
+                    MemoryInfo got_info = {};
+                    u32 page_info = 0;
+                    if (R_SUCCEEDED(svcQueryMemory(&got_info, &page_info, got)) &&
+                        readable_range(got, sizeof(void*))) {
+                        void** slot = reinterpret_cast<void**>(got);
+                        void* expected = reinterpret_cast<void*>(base + kIsaacUpdateOffset);
+                        void* actual = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
+                        if (actual == expected) {
+                            set_stage(3);
+                            g_original_update = reinterpret_cast<IsaacUpdate>(expected);
+                            void* replacement = reinterpret_cast<void*>(isaac_update_hook);
+                            if (!(got_info.perm & Perm_W)) {
+                                set_stage(5);
+                                worker_exit();
+                            }
+                            if (__atomic_compare_exchange_n(slot, &expected, replacement,
+                                                            false, __ATOMIC_ACQ_REL,
+                                                            __ATOMIC_ACQUIRE)) {
+                                set_stage(4);
+                                trace("IsaacLuaBridge: verified IsaacUpdate GOT installed");
+                            } else {
+                                set_stage(6);
+                            }
                         } else {
                             set_stage(6);
                         }
                     } else {
                         set_stage(6);
                     }
+                    worker_exit();
                 }
-                worker_exit();
             }
-            if (next <= address) break;
-            address = next;
         }
         svcSleepThread(25 * 1000 * 1000LL);
     }
     set_stage(7);
-    trace("IsaacLuaBridge: Repentance NRO wait timed out");
+    trace("IsaacLuaBridge: Repentance loader wait timed out");
     worker_exit();
 }
 } // namespace
@@ -316,13 +321,32 @@ int main(int, char**) {
 
     g_startup_log = SaltySDCore_fopen(
         "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-startup.log", "wb");
-    trace("IsaacLuaBridge 0.3.3: diagnosing worker startup");
+    trace("IsaacLuaBridge 0.3.4: verified loader route");
     if (!prepare_lua()) {
         if (g_startup_log) SaltySDCore_fclose(g_startup_log);
         g_startup_log = nullptr;
         return 1;
     }
 
+    // Source of this main offset: the independently verified loader binding.
+    const uintptr_t code_start = SaltySDCore_getCodeStart();
+    if (!code_start || code_start > UINTPTR_MAX - 0x4000 - 0x10CC78) {
+        trace("IsaacLuaBridge: main loader base unavailable");
+        if (g_startup_log) SaltySDCore_fclose(g_startup_log);
+        g_startup_log = nullptr;
+        return 1;
+    }
+    g_main_base = code_start + 0x4000;
+    MemoryInfo main_info = {};
+    u32 page_info = 0;
+    if (R_FAILED(svcQueryMemory(&main_info, &page_info, g_main_base)) ||
+        main_info.addr != g_main_base || !(main_info.perm & Perm_X)) {
+        trace("IsaacLuaBridge: main executable mapping mismatch");
+        if (g_startup_log) SaltySDCore_fclose(g_startup_log);
+        g_startup_log = nullptr;
+        return 1;
+    }
+    trace("IsaacLuaBridge: main loader mapping verified");
     Handle worker = INVALID_HANDLE;
     const Result worker_result = svcCreateThread(
         &worker, reinterpret_cast<void*>(bridge_worker), nullptr,
