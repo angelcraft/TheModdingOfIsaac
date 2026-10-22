@@ -112,7 +112,8 @@ bool cheat_file_absent() {
         set_status("Stopped", "Cheat file exists; refusing debugger attach.");
         return false;
     }
-    if (rc != MAKERESULT(Module_Fs, 1)) {
+    // FS module 2, description 1: PathNotFound.
+    if (rc != MAKERESULT(2, 1)) {
         set_status("Stopped", "Could not prove the exact cheat file is absent.");
         return false;
     }
