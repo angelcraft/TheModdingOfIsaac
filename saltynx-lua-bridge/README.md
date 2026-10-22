@@ -1,8 +1,9 @@
 # Isaac Lua frame bridge 0.3.0
 
 This is the first guarded in-game callback experiment for the exact verified
-Nintendo Switch Repentance build. It registers one SaltyNX import replacement
-for `IsaacUpdate`. On first invocation it derives the ASLR base from the verified
+Nintendo Switch Repentance build. A small worker waits for the late Repentance
+NRO, validates it, verifies the writable GOT still targets the original
+`IsaacUpdate`, and replaces only that slot. On first invocation it derives the ASLR base from the verified
 caller, checks the executable mapping, NRO Build ID, complete 36-byte original
 function and call boundary, then calls the untouched original function directly.
 

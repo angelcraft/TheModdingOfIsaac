@@ -48,6 +48,7 @@ const u8 kExpectedCallBoundary[8] = {
 using IsaacUpdate = void (*)();
 
 alignas(16) char g_heap[0x40000];
+alignas(0x1000) char g_worker_stack[0x4000];
 void* g_original_lr = nullptr;
 lua_State* g_lua = nullptr;
 IsaacUpdate g_original_update = nullptr;
@@ -57,6 +58,20 @@ unsigned g_callback_count = 0;
 bool g_inside_hook = false;
 bool g_validation_failed = false;
 bool g_runtime_result_written = false;
+
+bool validate_image(uintptr_t base) {
+    MemoryInfo info = {};
+    u32 page_info = 0;
+    if (R_FAILED(svcQueryMemory(&info, &page_info, base)) ||
+        info.addr != base || !(info.perm & Perm_X) || info.size < kMinimumTextSize) return false;
+    const u8* image = reinterpret_cast<const u8*>(base);
+    return std::memcmp(image + 0x10, "NRO0", 4) == 0 &&
+        std::memcmp(image + 0x40, kExpectedBuildId, sizeof(kExpectedBuildId)) == 0 &&
+        std::memcmp(image + kIsaacUpdateOffset, kExpectedIsaacUpdate,
+                    sizeof(kExpectedIsaacUpdate)) == 0 &&
+        std::memcmp(image + kCallerReturnOffset - 4, kExpectedCallBoundary,
+                    sizeof(kExpectedCallBoundary)) == 0;
+}
 
 void trace(const char* message) {
     if (!message) return;
@@ -149,22 +164,7 @@ bool resolve_verified_original(uintptr_t return_address) {
     if (return_address < kCallerReturnOffset) return false;
     const uintptr_t base = return_address - kCallerReturnOffset;
 
-    MemoryInfo info = {};
-    u32 page_info = 0;
-    if (R_FAILED(svcQueryMemory(&info, &page_info, base)) ||
-        info.addr != base || !(info.perm & Perm_X) || info.size < kMinimumTextSize) {
-        return false;
-    }
-
-    const u8* image = reinterpret_cast<const u8*>(base);
-    if (std::memcmp(image + 0x10, "NRO0", 4) != 0 ||
-        std::memcmp(image + 0x40, kExpectedBuildId, sizeof(kExpectedBuildId)) != 0 ||
-        std::memcmp(image + kIsaacUpdateOffset, kExpectedIsaacUpdate,
-                    sizeof(kExpectedIsaacUpdate)) != 0 ||
-        std::memcmp(image + kCallerReturnOffset - 4, kExpectedCallBoundary,
-                    sizeof(kExpectedCallBoundary)) != 0) {
-        return false;
-    }
+    if (!validate_image(base)) return false;
 
     g_original_update = reinterpret_cast<IsaacUpdate>(base + kIsaacUpdateOffset);
     trace("IsaacLuaBridge: live Repentance contract verified");
@@ -219,6 +219,38 @@ extern "C" void isaac_update_hook() {
     dispatch_lua_update();
     g_inside_hook = false;
 }
+
+void bridge_worker(void*) {
+    for (unsigned attempt = 0; attempt < 1200; ++attempt) {
+        uintptr_t address = 0;
+        while (true) {
+            MemoryInfo info = {};
+            u32 page_info = 0;
+            if (R_FAILED(svcQueryMemory(&info, &page_info, address))) break;
+            const uintptr_t next = info.addr + info.size;
+            if ((info.perm & Perm_X) && info.size >= kMinimumTextSize &&
+                validate_image(info.addr)) {
+                const uintptr_t got = info.addr + 0xAA5C20;
+                MemoryInfo got_info = {};
+                if (R_SUCCEEDED(svcQueryMemory(&got_info, &page_info, got)) &&
+                    (got_info.perm & Perm_W)) {
+                    void** slot = reinterpret_cast<void**>(got);
+                    void* expected = reinterpret_cast<void*>(info.addr + kIsaacUpdateOffset);
+                    if (*slot == expected) {
+                        g_original_update = reinterpret_cast<IsaacUpdate>(expected);
+                        __atomic_store_n(slot, reinterpret_cast<void*>(isaac_update_hook), __ATOMIC_RELEASE);
+                        trace("IsaacLuaBridge: verified IsaacUpdate GOT installed");
+                    }
+                }
+                return;
+            }
+            if (next <= address) break;
+            address = next;
+        }
+        svcSleepThread(25 * 1000 * 1000LL);
+    }
+    trace("IsaacLuaBridge: Repentance NRO wait timed out");
+}
 } // namespace
 
 extern "C" {
@@ -260,10 +292,17 @@ int main(int, char**) {
         return 1;
     }
 
-    SaltySDCore_ReplaceImport(
-        "_ZN15IsaacRepentance11IsaacUpdateEv",
-        reinterpret_cast<void*>(isaac_update_hook));
-    trace("IsaacLuaBridge: late NRO import replacement registered once");
+    Handle worker = INVALID_HANDLE;
+    const Result worker_result = svcCreateThread(
+        &worker, reinterpret_cast<void*>(bridge_worker), nullptr,
+        g_worker_stack + sizeof(g_worker_stack), 0x2C, -2);
+    if (R_FAILED(worker_result) || R_FAILED(svcStartThread(worker))) {
+        trace("IsaacLuaBridge: could not start NRO wait thread");
+        if (g_startup_log) SaltySDCore_fclose(g_startup_log);
+        g_startup_log = nullptr;
+        return 1;
+    }
+    trace("IsaacLuaBridge: verified NRO wait thread started");
 
     if (g_startup_log) SaltySDCore_fclose(g_startup_log);
     g_startup_log = nullptr;
