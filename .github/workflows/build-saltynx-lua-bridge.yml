@@ -5,10 +5,12 @@ on:
   push:
     paths:
       - "saltynx-lua-bridge/**"
+      - "tools/livebridge/**"
       - ".github/workflows/build-saltynx-lua-bridge.yml"
   pull_request:
     paths:
       - "saltynx-lua-bridge/**"
+      - "tools/livebridge/**"
       - ".github/workflows/build-saltynx-lua-bridge.yml"
 
 permissions:
@@ -47,6 +49,8 @@ jobs:
           cp "$DEPS/NX-FPS/IsaacLuaBridge.elf" "$ROOT/dist/SaltySD/plugins/010021C000B6A000/"
           cp "$ROOT/bridge.lua" "$ROOT/dist/SaltySD/plugins/010021C000B6A000/"
           cp "$ROOT/README.md" "$ROOT/dist/"
+          mkdir -p "$ROOT/dist/windows"
+          cp "$GITHUB_WORKSPACE/tools/livebridge/windows/IsaacLiveBridge.ps1" "$ROOT/dist/windows/"
           cd "$ROOT/dist"
           sha256sum SaltySD/plugins/010021C000B6A000/* > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
