@@ -21,7 +21,7 @@ namespace {
 constexpr u64 kExpectedTitleId = 0x010021C000B6A000ULL;
 constexpr uintptr_t kCallerReturnOffset = 0x4C0A10;
 constexpr uintptr_t kIsaacUpdateOffset = 0x3B37F0;
-constexpr uintptr_t kMinimumTextSize = 0x68D000;
+constexpr uintptr_t kMinimumTextSize = kCallerReturnOffset + 8;
 constexpr size_t kMaxScriptBytes = 256 * 1024;
 constexpr unsigned kCallbackLimit = 3;
 
@@ -63,7 +63,9 @@ bool validate_image(uintptr_t base) {
     MemoryInfo info = {};
     u32 page_info = 0;
     if (R_FAILED(svcQueryMemory(&info, &page_info, base)) ||
-        info.addr != base || !(info.perm & Perm_X) || info.size < kMinimumTextSize) return false;
+        info.addr != base || !(info.perm & Perm_X) || info.size < kMinimumTextSize ||
+        base > UINTPTR_MAX - info.size ||
+        base + info.size < base + 0xAA5C20 + sizeof(void*)) return false;
     const u8* image = reinterpret_cast<const u8*>(base);
     return std::memcmp(image + 0x10, "NRO0", 4) == 0 &&
         std::memcmp(image + 0x40, kExpectedBuildId, sizeof(kExpectedBuildId)) == 0 &&
