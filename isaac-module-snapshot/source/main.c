@@ -108,6 +108,10 @@ static void load_bridge_marker(void) {
              ? "present" : "incomplete");
 }
 
+// Declared here because the observation helpers follow the service wrappers.
+static Result cheat_read(u64 address, void *out, size_t size);
+static Result cheat_query(MemoryInfo *out, u64 address);
+
 static void report_bridge_stage(void) {
     if (!g_bridge_stage_address) {
         log_line("bridge_callback=unknown (stage address unavailable)");
