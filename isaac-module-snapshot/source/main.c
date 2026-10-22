@@ -20,6 +20,7 @@
 
 #define EXPECTED_TITLE_ID UINT64_C(0x010021C000B6A000)
 #define LOG_PATH "sdmc:/switch/TheModdingOfIsaac/module-snapshot.log"
+#define BRIDGE_STARTUP_PATH "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-startup.log"
 #define CHEAT_PATH "sdmc:/atmosphere/contents/010021c000b6a000/cheats/b6e5bdb9dc12e1d1.txt"
 #define MAX_MAPPINGS 4096
 #define MAPPING_BATCH 32
@@ -53,6 +54,9 @@ static Service g_cheat_service;
 static bool g_cheat_open, g_pm_dmnt_open, g_pm_info_open, g_ldr_open;
 static size_t g_verified_repentance;
 static u64 g_loader_run_pointer;
+static u64 g_bridge_stage_address;
+static u64 g_bridge_hook_address;
+static bool g_bridge_hook_observed;
 
 static void log_line(const char *format, ...) {
     if (!g_log) return;
@@ -81,6 +85,57 @@ static void log_build_id(const char *label, const u8 id[0x20]) {
     for (size_t i = 0; i < 0x20; ++i)
         snprintf(hex + i * 2, sizeof(hex) - i * 2, "%02X", id[i]);
     log_line("%s=%s", label, hex);
+}
+
+/* Read only the two marker addresses that our own SaltyNX plugin wrote during
+ * startup; do not perform file IPC from an injected update callback. */
+static void load_bridge_marker(void) {
+    FILE *file = fopen(BRIDGE_STARTUP_PATH, "rb");
+    if (!file) {
+        log_line("bridge_marker=unavailable (no startup log)");
+        return;
+    }
+    char line[192];
+    while (fgets(line, sizeof(line), file)) {
+        uint64_t parsed = 0;
+        if (sscanf(line, "bridge_stage_address=0x%" SCNx64, &parsed) == 1)
+            g_bridge_stage_address = parsed;
+        else if (sscanf(line, "bridge_hook_address=0x%" SCNx64, &parsed) == 1)
+            g_bridge_hook_address = parsed;
+    }
+    fclose(file);
+    log_line("bridge_marker=%s", (g_bridge_stage_address && g_bridge_hook_address)
+             ? "present" : "incomplete");
+}
+
+static void report_bridge_stage(void) {
+    if (!g_bridge_stage_address) {
+        log_line("bridge_callback=unknown (stage address unavailable)");
+        return;
+    }
+    MemoryInfo region = {0};
+    Result rc = cheat_query(&region, g_bridge_stage_address);
+    if (R_FAILED(rc) || !(region.perm & Perm_R) ||
+        region.addr > g_bridge_stage_address ||
+        g_bridge_stage_address - region.addr > region.size ||
+        sizeof(u32) > region.size - (g_bridge_stage_address - region.addr)) {
+        log_line("bridge_callback=unknown (stage memory inaccessible)");
+        return;
+    }
+    u32 stage = 0;
+    rc = cheat_read(g_bridge_stage_address, &stage, sizeof(stage));
+    if (R_FAILED(rc)) {
+        log_line("bridge_callback=unknown (stage read failed)");
+        return;
+    }
+    log_line("bridge_stage=%" PRIu32 " bridge_got_hook=%s",
+             (uint32_t)stage, g_bridge_hook_observed ? "yes" : "no");
+    if (stage == 8 && g_bridge_hook_observed)
+        log_line("bridge_callback=SUCCESS (Lua on_update executed in game)");
+    else if (stage == 9)
+        log_line("bridge_callback=ERROR (Lua on_update failed)");
+    else
+        log_line("bridge_callback=NOT_CONFIRMED");
 }
 
 /* Minimal client: deliberately includes only observation and guarded attach. */
@@ -249,12 +304,19 @@ static bool verify_bridge_contract(u64 base) {
         if (!bounded_read(base + k_contract_bindings[i].got, &pointer, sizeof(pointer), Perm_R)) return false;
         const u64 expected = base + k_contract_bindings[i].target;
         const bool match = pointer == expected;
+        const bool is_our_hook = !match && strcmp(k_contract_bindings[i].name, "IsaacUpdate") == 0 &&
+                                 g_bridge_hook_address && pointer == g_bridge_hook_address;
+        if (is_our_hook) g_bridge_hook_observed = true;
         log_line("bridge_binding=%s actual=0x%016" PRIX64 " expected=0x%016" PRIX64 " result=%s",
-                 k_contract_bindings[i].name, (uint64_t)pointer, (uint64_t)expected, match ? "MATCH" : "OTHER");
-        if (!match) return fail_message("A live function binding differs; no bridge is safe to install.");
+                 k_contract_bindings[i].name, (uint64_t)pointer, (uint64_t)expected,
+                 match ? "MATCH" : (is_our_hook ? "EXPECTED_HOOK" : "OTHER"));
+        if (!match && !is_our_hook)
+            return fail_message("A live function binding differs from the expected original or bridge hook.");
     }
     ++g_verified_repentance;
-    log_line("bridge_observation=code_and_bindings_match; no hook installed; callback execution untested");
+    log_line("bridge_observation=%s",
+             g_bridge_hook_observed ? "expected_bridge_hook_observed" :
+             "code_and_original_bindings_match; no hook installed");
     return true;
 }
 
@@ -404,8 +466,10 @@ static bool take_snapshot(void) {
     if (!verify_metadata(&before, pid, &loader)) return false;
     log_build_id("verified_main_nso_build_id", before.main_nso_build_id);
     log_loader_got(&before);
+    load_bridge_marker();
     size_t readable_regions = 0, nro_regions = 0;
     if (!snapshot_mappings(&readable_regions, &nro_regions)) return false;
+    report_bridge_stage();
     rc = cheat_metadata(&after);
     if (R_FAILED(rc)) return fail_result("read final process metadata", rc);
     if (!verify_metadata(&after, pid, &loader)) return false;
@@ -433,7 +497,7 @@ static bool prepare_log(void) {
         printf("Cannot open log (errno %d).\n", errno);
         return false;
     }
-    log_line("IsaacModuleSnapshot 0.2.0 - bridge contract");
+    log_line("IsaacModuleSnapshot 0.3.0 - callback witness");
     log_line("observation=bounded executable headers; game memory is never written");
     return true;
 }
