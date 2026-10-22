@@ -43,9 +43,11 @@ try {
             [System.IO.File]::AppendAllText($logPath, $row + [Environment]::NewLine, $encoding)
             $received++
         }
-        catch [System.Net.Sockets.SocketException] {
-            if ($_.Exception.ErrorCode -eq 10060 -or
-                $_.Exception.SocketErrorCode -eq [System.Net.Sockets.SocketError]::TimedOut) {
+        catch {
+            $errorObject = $_.Exception
+            if ($errorObject.InnerException) { $errorObject = $errorObject.InnerException }
+            if ($errorObject -is [System.Net.Sockets.SocketException] -and
+                $errorObject.SocketErrorCode -eq [System.Net.Sockets.SocketError]::TimedOut) {
                 continue
             }
             throw
