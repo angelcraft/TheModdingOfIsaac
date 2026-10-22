@@ -56,6 +56,7 @@ static size_t g_verified_repentance;
 static u64 g_loader_run_pointer;
 static u64 g_bridge_stage_address;
 static u64 g_bridge_hook_address;
+static u64 g_bridge_runtime_address;
 static bool g_bridge_hook_observed;
 static bool g_unexpected_bindings;
 
@@ -103,6 +104,8 @@ static void load_bridge_marker(void) {
             g_bridge_stage_address = parsed;
         else if (sscanf(line, "bridge_hook_address=0x%" SCNx64, &parsed) == 1)
             g_bridge_hook_address = parsed;
+        else if (sscanf(line, "bridge_runtime_address=0x%" SCNx64, &parsed) == 1)
+            g_bridge_runtime_address = parsed;
     }
     fclose(file);
     log_line("bridge_marker=%s", (g_bridge_stage_address && g_bridge_hook_address)
@@ -112,6 +115,37 @@ static void load_bridge_marker(void) {
 // Declared here because the observation helpers follow the service wrappers.
 static Result cheat_read(u64 address, void *out, size_t size);
 static Result cheat_query(MemoryInfo *out, u64 address);
+
+static void report_runtime_counters(void) {
+    if (!g_bridge_runtime_address) {
+        log_line("bridge_continuous=unknown (runtime marker unavailable)");
+        return;
+    }
+    struct { u32 magic, version, attempted, succeeded, failed; } witness = {0};
+    _Static_assert(sizeof(witness) == 20, "Runtime witness layout");
+    MemoryInfo mapping = {0};
+    Result rc = cheat_query(&mapping, g_bridge_runtime_address);
+    if (R_FAILED(rc) || !(mapping.perm & Perm_R) ||
+        mapping.addr > g_bridge_runtime_address ||
+        g_bridge_runtime_address - mapping.addr > mapping.size ||
+        sizeof(witness) > mapping.size - (g_bridge_runtime_address - mapping.addr)) {
+        log_line("bridge_continuous=unknown (runtime memory inaccessible)");
+        return;
+    }
+    rc = cheat_read(g_bridge_runtime_address, &witness, sizeof(witness));
+    if (R_FAILED(rc) || witness.magic != 0x494C4234u || witness.version != 1u) {
+        log_line("bridge_continuous=unknown (runtime signature mismatch)");
+        return;
+    }
+    log_line("bridge_callback_attempted=%" PRIu32 " succeeded=%" PRIu32 " failed=%" PRIu32,
+             witness.attempted, witness.succeeded, witness.failed);
+    if (g_bridge_hook_observed && witness.succeeded > 3 && witness.failed == 0) {
+        log_line("bridge_continuous=OBSERVED (more than three successful callbacks)");
+        printf("Continuous Lua: %" PRIu32 " successful callbacks.\n", witness.succeeded);
+    } else {
+        log_line("bridge_continuous=NOT_CONFIRMED");
+    }
+}
 
 static void report_bridge_stage(void) {
     if (!g_bridge_stage_address) {
@@ -147,6 +181,7 @@ static void report_bridge_stage(void) {
         log_line("bridge_callback=unknown (stage read failed)");
         return;
     }
+    report_runtime_counters();
     log_line("bridge_stage=%" PRIu32 " bridge_got_hook=%s",
              (uint32_t)stage, g_bridge_hook_observed ? "yes" : "no");
     if (stage == 8 && g_bridge_hook_observed) {
@@ -530,7 +565,7 @@ static bool prepare_log(void) {
         printf("Cannot open log (errno %d).\n", errno);
         return false;
     }
-    log_line("IsaacModuleSnapshot 0.3.1 - callback witness");
+    log_line("IsaacModuleSnapshot 0.4.0 - continuous callback witness");
     log_line("observation=bounded executable headers; game memory is never written");
     return true;
 }

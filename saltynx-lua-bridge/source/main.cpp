@@ -18,7 +18,7 @@ constexpr uintptr_t kCallerReturnOffset = 0x4C0A10;
 constexpr uintptr_t kIsaacUpdateOffset = 0x3B37F0;
 constexpr uintptr_t kMinimumTextSize = kCallerReturnOffset + 8;
 constexpr size_t kMaxScriptBytes = 256 * 1024;
-constexpr unsigned kCallbackLimit = 3;
+constexpr int kLuaInstructionBudget = 100000;
 constexpr unsigned kNroWaitAttempts = 800; // 20 seconds maximum, 25ms each
 constexpr uintptr_t kLazyResolverOffset = 0x66FAA0; // observed shared late-import resolver
 
@@ -62,7 +62,16 @@ IsaacUpdate g_original_update = nullptr;
 uintptr_t g_main_base = 0;
 FILE* g_startup_log = nullptr;
 unsigned g_frame = 0;
-unsigned g_callback_count = 0;
+bool g_lua_disabled = false;
+struct RuntimeWitness {
+    u32 magic;
+    u32 version;
+    u32 attempted;
+    u32 succeeded;
+    u32 failed;
+};
+static_assert(sizeof(RuntimeWitness) == 20, "Snapshot witness layout");
+alignas(8) RuntimeWitness g_runtime = {0x494C4234u, 1u, 0u, 0u, 0u};
 alignas(4) u32 g_hook_busy = 0;
 bool g_validation_failed = false;
 // Readable from a memory snapshot; no IPC is performed by worker diagnostics.
@@ -73,7 +82,7 @@ void set_stage(u32 value) {
     u32 old = __atomic_load_n(&g_bridge_stage, __ATOMIC_ACQUIRE);
     do {
         // A completed callback must not be overwritten by the installing worker.
-        if (old == 8 || old == 9) return;
+        if (old == 9 || (old == 8 && value != 9)) return;
     } while (!__atomic_compare_exchange_n(&g_bridge_stage, &old, value, false,
                                           __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
 }
@@ -110,6 +119,46 @@ int lua_log(lua_State* state) {
     const char* message = lua_tostring(state, 1);
     trace(message ? message : "(Lua non-string)");
     return 0;
+}
+
+void lua_instruction_limit(lua_State* state, lua_Debug*) {
+    luaL_error(state, "IsaacLuaBridge: Lua instruction budget exceeded");
+}
+
+// These values describe our verified update callback, not Isaac entities.
+int lua_get_frame_count(lua_State* state) {
+    lua_pushinteger(state, static_cast<lua_Integer>(g_frame));
+    return 1;
+}
+
+int lua_get_runtime_state(lua_State* state) {
+    lua_createtable(state, 0, 7);
+    lua_pushliteral(state, "0.4.0");
+    lua_setfield(state, -2, "version");
+    lua_pushliteral(state, "91C73FDD575061318D68886316AFEAC72388B2AB");
+    lua_setfield(state, -2, "target_build_id");
+    lua_pushinteger(state, static_cast<lua_Integer>(g_frame));
+    lua_setfield(state, -2, "frame");
+    lua_pushinteger(state, static_cast<lua_Integer>(
+        __atomic_load_n(&g_runtime.succeeded, __ATOMIC_ACQUIRE)));
+    lua_setfield(state, -2, "completed_callbacks");
+    lua_pushinteger(state, static_cast<lua_Integer>(
+        __atomic_load_n(&g_runtime.failed, __ATOMIC_ACQUIRE)));
+    lua_setfield(state, -2, "failed_callbacks");
+    lua_pushboolean(state, g_original_update != nullptr);
+    lua_setfield(state, -2, "target_verified");
+    lua_pushboolean(state, 0);
+    lua_setfield(state, -2, "callback_limit");
+    return 1;
+}
+
+void register_bridge_api(lua_State* state) {
+    lua_createtable(state, 0, 2);
+    lua_pushcfunction(state, lua_get_frame_count);
+    lua_setfield(state, -2, "GetFrameCount");
+    lua_pushcfunction(state, lua_get_runtime_state);
+    lua_setfield(state, -2, "GetRuntimeState");
+    lua_setglobal(state, "IsaacBridge");
 }
 
 bool read_script(char** output, size_t* output_size) {
@@ -160,10 +209,15 @@ bool prepare_lua() {
     }
     luaL_openlibs(g_lua);
     lua_register(g_lua, "log", lua_log);
+    register_bridge_api(g_lua);
 
     int status = luaL_loadbuffer(g_lua, source, source_size, "@bridge.lua");
     std::free(source);
-    if (status == 0) status = lua_pcall(g_lua, 0, 0, 0);
+    if (status == 0) {
+        lua_sethook(g_lua, lua_instruction_limit, LUA_MASKCOUNT, kLuaInstructionBudget);
+        status = lua_pcall(g_lua, 0, 0, 0);
+        lua_sethook(g_lua, nullptr, 0, 0);
+    }
     if (status != 0) {
         trace(lua_tostring(g_lua, -1));
         lua_close(g_lua);
@@ -196,19 +250,26 @@ bool resolve_verified_original(uintptr_t return_address) {
 }
 
 void dispatch_lua_update() {
-    if (!g_lua || g_callback_count >= kCallbackLimit) return;
+    if (!g_lua || g_lua_disabled) return;
     lua_getglobal(g_lua, "on_update");
     lua_pushinteger(g_lua, static_cast<lua_Integer>(g_frame));
+    __atomic_add_fetch(&g_runtime.attempted, 1u, __ATOMIC_ACQ_REL);
+    lua_sethook(g_lua, lua_instruction_limit, LUA_MASKCOUNT, kLuaInstructionBudget);
     const int status = lua_pcall(g_lua, 1, 0, 0);
-    ++g_callback_count;
+    lua_sethook(g_lua, nullptr, 0, 0);
     if (status != 0) {
         trace(lua_tostring(g_lua, -1));
         lua_pop(g_lua, 1);
-        g_callback_count = kCallbackLimit;
+        __atomic_add_fetch(&g_runtime.failed, 1u, __ATOMIC_ACQ_REL);
+        g_lua_disabled = true;
         set_stage(9);
-    } else if (g_callback_count == 1) {
-        trace("IsaacLuaBridge: first in-game Lua callback completed");
-        set_stage(8);
+    } else {
+        const u32 successes = __atomic_add_fetch(
+            &g_runtime.succeeded, 1u, __ATOMIC_ACQ_REL);
+        if (successes == 1) {
+            trace("IsaacLuaBridge: first in-game Lua callback completed");
+            set_stage(8);
+        }
     }
 }
 
@@ -358,7 +419,7 @@ int main(int, char**) {
 
     g_startup_log = SaltySDCore_fopen(
         "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-startup.log", "wb");
-    trace("IsaacLuaBridge 0.3.8: bounded eager GOT hook");
+    trace("IsaacLuaBridge 0.4.0: continuous Lua callbacks");
     if (!prepare_lua()) {
         if (g_startup_log) SaltySDCore_fclose(g_startup_log);
         g_startup_log = nullptr;
@@ -392,6 +453,9 @@ int main(int, char**) {
     trace(marker);
     std::snprintf(marker, sizeof(marker), "bridge_hook_address=0x%016llX",
                   static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(isaac_update_hook)));
+    trace(marker);
+    std::snprintf(marker, sizeof(marker), "bridge_runtime_address=0x%016llX",
+                  static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(&g_runtime)));
     trace(marker);
     Handle worker = INVALID_HANDLE;
     const Result worker_result = svcCreateThread(

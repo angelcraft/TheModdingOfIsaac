@@ -1,4 +1,13 @@
-# IsaacModuleSnapshot 0.3.1 — callback witness
+# IsaacModuleSnapshot 0.4.0 — continuous callback witness
+
+With IsaacLuaBridge 0.4.0 this existing reader also checks the startup runtime
+marker, its version/signature and memory bounds, and reports attempted,
+successful and failed callbacks. More than three successful callbacks with
+zero errors and the expected GOT hook produces `bridge_continuous=OBSERVED`.
+This measures callback counts; it does not establish frame rate or Specialist.
+The stage/hook witness remains compatible with 0.3.8, whose runtime counters
+are reported unavailable. No new native offsets, memory writes or tools are added.
+
 
 Esta rama amplía el lector ya existente (no crea una herramienta nueva).
 Si IsaacLuaBridge 0.3.5 también está instalado, lee las direcciones de estado

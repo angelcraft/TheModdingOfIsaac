@@ -49,8 +49,7 @@ jobs:
           cp "$DEPS/NX-FPS/IsaacLuaBridge.elf" "$ROOT/dist/SaltySD/plugins/010021C000B6A000/"
           cp "$ROOT/bridge.lua" "$ROOT/dist/SaltySD/plugins/010021C000B6A000/"
           cp "$ROOT/README.md" "$ROOT/dist/"
-          mkdir -p "$ROOT/dist/windows"
-          cp "$GITHUB_WORKSPACE/tools/livebridge/windows/IsaacLiveBridge.ps1" "$ROOT/dist/windows/"
+          printf 'version=0.4.0\nsource_commit=%s\nstable_0_3_8=103e5e4563f475bad318241b3bc5fb5c1544f758\n' "$GITHUB_SHA" > "$ROOT/dist/BUILD.txt"
           cd "$ROOT/dist"
           sha256sum SaltySD/plugins/010021C000B6A000/* > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4

@@ -1,58 +1,63 @@
-# IsaacLuaBridge 0.3.8 — bounded eager IsaacUpdate GOT hook
+# IsaacLuaBridge 0.4.0 — continuous callbacks
 
-**Experimental and version-specific. Not Specialist yet.** The purpose of this
-single test is to make Isaac's own update loop call `on_update(frame)` in the
-persistent Lua 5.1 state. Gameplay APIs for items/costumes/music are not exposed.
+The 0.3.8 in-game Lua milestone is preserved at
+`stable/isaacluabridge-0.3.8`, commit
+`103e5e4563f475bad318241b3bc5fb5c1544f758`.
+The user reported stage 8, EXPECTED_HOOK and Lua callback SUCCESS on Switch.
+Version 0.4.0 is the next device candidate; its device stability is not yet established.
 
-## Change from 0.3.7
+## What changes
 
-The old worker treated the first unexpected GOT value as a permanent mismatch.
-This could happen even when Repentance was already loaded because some dynamic
-imports still pointed to the common lazy-resolution stub.
+- Removes the three-callback limit. Calls `on_update(frame)` after every
+  intercepted original IsaacUpdate, including menu updates.
+- Keeps the existing hook, offsets, build checks, worker and original function call unchanged.
+- Stops further Lua callbacks after an error; stage 9 can now supersede stage 8.
+  Isaac's original update continues.
+- Uses a 100,000 Lua-instruction count hook per script invocation. This catches
+  ordinary Lua infinite loops. It is not a sandbox or a wall-clock timeout:
+  native C functions and scripts that change debug hooks are not bounded.
+- Publishes completed/attempted/failed counters through the existing startup marker.
+  No SD file IPC or network calls are added to the game update callback.
 
-The 0.3.8 worker now rechecks the GOT every 25 ms for up to 20 seconds, and
-performs one atomic compare-and-swap **only when the target is one of these**:
+## Minimal Lua API
 
-- The exact previously verified original `IsaacUpdate` implementation, or
-- The shared lazy-resolution entry observed in device logs, at NRO base
-  `+0x66FAA0`, and **only if that address is executable**.
+`IsaacBridge.GetFrameCount()` returns our intercepted update count.
+It is not Isaac's gameplay frame counter.
 
-Any unknown destination remains untouched. A concurrent loader relocation
-that wins the race makes the compare-and-swap fail; the worker retries with
-the new value. The actual NRO build ID, `IsaacUpdate` bytes, call boundary
-and GOT page permissions must match before installation.
+`IsaacBridge.GetRuntimeState()` returns a new table with `version`,
+`target_build_id`, `frame`, `completed_callbacks`, `failed_callbacks`,
+`target_verified` and `callback_limit=false`. The completed count excludes
+the currently executing callback. These are bridge runtime values, not gameplay
+state. This build does not implement `Game()`, `RegisterMod`, pedestal/player
+enumeration, item quality, costumes or music. Do not use manager existence or
+callback counts to infer that a run is active.
 
-There is no byte patch or inline trampoline. Network telemetry has been
-**disabled** in this build, including the extra networking thread, so
-**Windows will not receive packets**. Keep the Windows LiveBridge window closed.
+The bundled bridge.lua exercises continuous callbacks and checks this API.
+It does not pretend to run Specialist or simulate game entities.
 
-## One Switch test
+## Install and one device check
 
-Use the `IsaacLuaBridge.elf` built from this branch; do not reuse a prior
-artifact. Backup the old ELF, then place the new one at:
+Close Isaac first. Back up the working 0.3.8 ELF and bridge.lua outside the
+SaltySD plugins directory, then copy the matching 0.4.0 ELF and bridge.lua from
+the artifact to `sd:/SaltySD/plugins/010021C000B6A000/`.
+Update the existing Snapshot NRO with the artifact from the same commit.
 
-`sd:/SaltySD/plugins/010021C000B6A000/IsaacLuaBridge.elf`
+Launch Isaac, enter a run, move between rooms and leave it running about a minute.
+Use only the homebrew access path that already worked with Isaac remaining alive.
+Run Snapshot; it should report `bridge_got_hook=yes`, `bridge_stage=8`,
+`bridge_continuous=OBSERVED`, a succeeded count greater than three, and zero failed callbacks.
+These observations confirm counted callbacks, not timing performance or Specialist.
+No new diagnostic app, overlay or Windows networking tool is required.
 
-Leave the existing `bridge.lua` in the same directory.
+If stage 9 appears, restore the working script before another run.
+To roll back the whole candidate, restore the backed-up 0.3.8 ELF and script,
+then restart Isaac. The stable 0.3.8 artifact is also available from
+[its successful build](https://github.com/angelcraft/TheModdingOfIsaac/actions/runs/39864839133).
 
-1. Fully close Isaac. Relaunch it with Repentance enabled and enter a room.
-2. Leave it running for several seconds.
-3. Run **IsaacModuleSnapshot 0.3.1** through the same homebrew path that
-   previously worked for you, without closing the Isaac process.
-4. Send only `sd:/switch/TheModdingOfIsaac/module-snapshot.log` if necessary.
+## Specialist next
 
-Success: `bridge_stage=8`, `bridge_got_hook=yes`, and
-`bridge_callback=SUCCESS`. A stage of 4 with no 8 means the import hook
-was installed but the Lua callback was not observed.
-
-Stage 6 means no accepted binding emerged during the bounded wait.
-Stage 5 means the GOT was not writable. Stage 7 means the target NRO was
-not found. Neither is permission to overwrite random addresses.
-
-If the game crashes/freezes, remove this experimental ELF, restore the
-previous backup, restart the console/game normally and keep its crash
-report. Do not rerun a crashing ELF unchanged.
-
-The exact target NRO Build ID is
-`91C73FDD575061318D68886316AFEAC72388B2AB`.
-A successful GitHub Actions build is not evidence of device stability.
+The existing Workshop source triggers on valid collectible pedestals before pickup.
+Next native API work must verify the active run, player/entity list,
+collectible subtype/quality and costume calls against the exact NRO.
+No guessed structure layouts or new native offsets are introduced by 0.4.0.
+Target NRO Build ID: `91C73FDD575061318D68886316AFEAC72388B2AB`.
