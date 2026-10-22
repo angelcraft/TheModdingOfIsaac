@@ -6,14 +6,15 @@ Isaac.
 
 ## Usarlo en la Switch
 
-1. Copia el NRO compilado a
-   sd:/switch/TheModdingOfIsaac/IsaacModuleSnapshot.nro.
-2. Inicia Isaac y espera a su menú principal.
-3. Pulsa HOME, abre Álbum para entrar al Homebrew Menu en modo applet y ejecuta
-   IsaacModuleSnapshot. Mantén Isaac abierto; no uses otro juego con R para
-   iniciar el Homebrew Menu.
-4. Espera al resultado y pulsa PLUS para salir. Regresa al juego normalmente.
-5. Comparte sd:/switch/TheModdingOfIsaac/module-snapshot.log.
+El usuario confirmó que el NRO 0.1.0 completa la lectura con Isaac abierto.
+El overlay Tesla es una aplicación diferente y sigue pendiente de diagnóstico.
+
+1. Sustituye sd:/switch/TheModdingOfIsaac/IsaacModuleSnapshot.nro por el NRO 0.2.0.
+2. Ejecuta el lector por la misma vía que funcionó con 0.1.0, manteniendo Isaac abierto.
+3. Espera al resultado y pulsa PLUS para salir.
+4. Comparte sd:/switch/TheModdingOfIsaac/module-snapshot.log.
+
+No repitas una vía de acceso al Homebrew Menu que bloquee tu consola.
 
 La prueba sobrescribe solamente ese archivo de diagnóstico y crea sus
 directorios si faltan. Si aparece un error, el archivo conserva el motivo y los
@@ -90,3 +91,13 @@ La ejecución correcta en una Switch sigue pendiente de prueba.
   b156b4774fb2df7b93402169509266da7547fc4c](https://github.com/switchbrew/libnx/blob/b156b4774fb2df7b93402169509266da7547fc4c/nx/include/switch/services/pm.h).
 - [Identidad de módulos, mismo libnx](https://github.com/switchbrew/libnx/blob/b156b4774fb2df7b93402169509266da7547fc4c/nx/include/switch/services/ldr.h).
 - [Encabezados NRO, mismo libnx](https://github.com/switchbrew/libnx/blob/b156b4774fb2df7b93402169509266da7547fc4c/nx/include/switch/nro.h).
+
+## Contrato del puente (0.2.0)
+
+Además de las ventanas anteriores, verifica los SHA-256 completos de siete
+funciones y seis entradas PLT de la ruta de actualización. Los hashes se
+generan localmente a partir del NRO original; no se publica código del juego.
+Comprueba seis punteros GOT contra sus implementaciones esperadas y que el
+puntero del loader termine en run_repentance del NRO identificado. Una diferencia
+detiene el diagnóstico. Las coincidencias confirman código y enlaces observados;
+no prueban la ejecución de callbacks Lua ni instalan un hook.

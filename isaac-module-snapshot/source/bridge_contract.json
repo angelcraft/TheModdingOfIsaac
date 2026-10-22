@@ -1,0 +1,134 @@
+{
+  "sha256": "CC363208C220F65547EDDA6D8268B3B6C0F7373B14C91AE6FFB378018DE4B66A",
+  "windows": [
+    {
+      "name": "run_repentance",
+      "offset": 4982848,
+      "size": 552,
+      "sha256": "fd6f750fa9f2d9052df720600c81098ebd829be67191bc612441e39082422d2b"
+    },
+    {
+      "name": "IsaacUpdate",
+      "offset": 3880944,
+      "size": 36,
+      "sha256": "34d9ff6b9303a03c94bcc9d69e4633615dfd148eb469b6163971c7f9e76c1f63"
+    },
+    {
+      "name": "Manager::Update",
+      "offset": 4165048,
+      "size": 872,
+      "sha256": "1eb2003d48333d29dbc725cd564241075ec692ff405234f39dc9bd25628da4fc"
+    },
+    {
+      "name": "Game::Update",
+      "offset": 3479684,
+      "size": 2428,
+      "sha256": "38f54ce427c1f23258078835fbcfadb69b0a9dddc48f6e94a2bfc0ad5a845701"
+    },
+    {
+      "name": "Level::Update",
+      "offset": 3999908,
+      "size": 16,
+      "sha256": "642190a2681e80f9901d0b79090b9e2322506410f98f316b1086069d8e7c23cc"
+    },
+    {
+      "name": "Room::Update",
+      "offset": 4642696,
+      "size": 13188,
+      "sha256": "38ef2355d005f6a4215f814dc903e4eaefd76bf5ca860ea79ca9c046167fadd9"
+    },
+    {
+      "name": "EntityList::Update",
+      "offset": 485312,
+      "size": 3112,
+      "sha256": "5a6a73999a8be602a8286d55d1e591e6bd1fb0806d815ac1f0851a429c052a43"
+    },
+    {
+      "name": "IsaacUpdate PLT",
+      "offset": 6814064,
+      "size": 16,
+      "sha256": "fdd4839ff09b62af1ad28479b10251e29d899dabb72ced960d20bd6648629c94"
+    },
+    {
+      "name": "Manager::Update PLT",
+      "offset": 6791856,
+      "size": 16,
+      "sha256": "49477c9d53a9c39b73c3cdccfa6823f351f4d29f81c37939c0b28e175ada30b8"
+    },
+    {
+      "name": "Game::Update PLT",
+      "offset": 6801888,
+      "size": 16,
+      "sha256": "ab287cca560c12bc4b43528a30245d5c85107f45a7e8732b19d4154bd8b4c855"
+    },
+    {
+      "name": "Level::Update PLT",
+      "offset": 6756128,
+      "size": 16,
+      "sha256": "edcd480a5d8e270be3e464192d52a919535ccaec49b9a79cf3d31fbb961f745d"
+    },
+    {
+      "name": "Room::Update PLT",
+      "offset": 6798608,
+      "size": 16,
+      "sha256": "7f4e37a3c507db43b8e533d6deb2eb65fa0c3e879cbc8f6e4a0ecf9a512aa8ff"
+    },
+    {
+      "name": "EntityList::Update PLT",
+      "offset": 6810528,
+      "size": 16,
+      "sha256": "e5423e3370a068520e51523839698f5c9d70fc1d23be40ed53ed347a9c9ecedb"
+    }
+  ],
+  "bindings": [
+    {
+      "name": "IsaacUpdate",
+      "got": 11164704,
+      "target": 3880944,
+      "callsite": 4983308,
+      "branch": "BL",
+      "plt": 6814064
+    },
+    {
+      "name": "Manager::Update",
+      "got": 11153600,
+      "target": 4165048,
+      "callsite": 3880976,
+      "branch": "B",
+      "plt": 6791856
+    },
+    {
+      "name": "Game::Update",
+      "got": 11158616,
+      "target": 3479684,
+      "callsite": 4165724,
+      "branch": "BL",
+      "plt": 6801888
+    },
+    {
+      "name": "Level::Update",
+      "got": 11135736,
+      "target": 3999908,
+      "callsite": 3481940,
+      "branch": "BL",
+      "plt": 6756128
+    },
+    {
+      "name": "Room::Update",
+      "got": 11156976,
+      "target": 4642696,
+      "callsite": 3999920,
+      "branch": "B",
+      "plt": 6798608
+    },
+    {
+      "name": "EntityList::Update",
+      "got": 11162936,
+      "target": 485312,
+      "callsite": 4646600,
+      "branch": "BL",
+      "plt": 6810528
+    }
+  ],
+  "observation": "static code hashes and runtime binding expectations; no hook"
+}

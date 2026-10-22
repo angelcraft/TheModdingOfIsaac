@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include "bridge_contract.h"
 
 #define EXPECTED_TITLE_ID UINT64_C(0x010021C000B6A000)
 #define LOG_PATH "sdmc:/switch/TheModdingOfIsaac/module-snapshot.log"
@@ -50,6 +51,8 @@ _Static_assert(sizeof(MemoryInfo) == 0x28, "dmnt mapping ABI");
 static FILE *g_log;
 static Service g_cheat_service;
 static bool g_cheat_open, g_pm_dmnt_open, g_pm_info_open, g_ldr_open;
+static size_t g_verified_repentance;
+static u64 g_loader_run_pointer;
 
 static void log_line(const char *format, ...) {
     if (!g_log) return;
@@ -58,6 +61,7 @@ static void log_line(const char *format, ...) {
     vfprintf(g_log, format, args);
     va_end(args);
     fputc('\n', g_log);
+    fflush(g_log);
 }
 
 static bool fail_message(const char *message) {
@@ -133,7 +137,7 @@ static bool current_application(u64 *pid) {
     log_line("application_pid=0x%016" PRIX64 " title_id=%016" PRIX64,
              (uint64_t)*pid, (uint64_t)title_id);
     if (title_id != EXPECTED_TITLE_ID)
-        return fail_message("Isaac is not the running application. Use Album applet mode.");
+        return fail_message("Application title differs from the required Isaac title.");
     return true;
 }
 
@@ -196,6 +200,49 @@ static void log_header(const u8 *header, size_t size) {
     }
 }
 
+static bool bounded_read(u64 address, void *out, size_t size, u32 permissions) {
+    MemoryInfo mapping = {0};
+    Result rc = cheat_query(&mapping, address);
+    if (R_FAILED(rc)) return fail_result("query contract memory", rc);
+    if ((mapping.perm & permissions) != permissions || mapping.addr > address ||
+        address - mapping.addr > mapping.size || size > mapping.size - (address - mapping.addr))
+        return fail_message("Contract range is not wholly readable with the required permissions.");
+    rc = cheat_read(address, out, size);
+    return R_SUCCEEDED(rc) ? true : fail_result("read contract memory", rc);
+}
+
+static bool verify_bridge_contract(u64 base) {
+    static u8 buffer[0x4000];
+    if (base > UINT64_MAX - 0x4C0840 || g_loader_run_pointer != base + 0x4C0840)
+        return fail_message("Loader entry binding does not lead to the verified Repentance module.");
+    log_line("bridge_loader_entry=MATCH");
+    for (size_t i = 0; i < sizeof(k_contract_code) / sizeof(k_contract_code[0]); ++i) {
+        const size_t size = k_contract_code[i].size;
+        if (size > sizeof(buffer) || base > UINT64_MAX - k_contract_code[i].offset)
+            return fail_message("Invalid contract code extent.");
+        if (!bounded_read(base + k_contract_code[i].offset, buffer, size, Perm_Rx)) return false;
+        u8 hash[32];
+        sha256CalculateHash(hash, buffer, size);
+        const bool match = memcmp(hash, k_contract_code[i].hash, sizeof(hash)) == 0;
+        log_line("bridge_code=%s bytes=%zu sha256=%s", k_contract_code[i].name, size, match ? "MATCH" : "MISMATCH");
+        if (!match) return fail_message("A complete bridge function/PLT differs from the verified build.");
+    }
+    for (size_t i = 0; i < sizeof(k_contract_bindings) / sizeof(k_contract_bindings[0]); ++i) {
+        if (base > UINT64_MAX - k_contract_bindings[i].got || base > UINT64_MAX - k_contract_bindings[i].target)
+            return fail_message("Contract GOT address overflow.");
+        u64 pointer = 0;
+        if (!bounded_read(base + k_contract_bindings[i].got, &pointer, sizeof(pointer), Perm_R)) return false;
+        const u64 expected = base + k_contract_bindings[i].target;
+        const bool match = pointer == expected;
+        log_line("bridge_binding=%s actual=0x%016" PRIX64 " expected=0x%016" PRIX64 " result=%s",
+                 k_contract_bindings[i].name, (uint64_t)pointer, (uint64_t)expected, match ? "MATCH" : "OTHER");
+        if (!match) return fail_message("A live function binding differs; no bridge is safe to install.");
+    }
+    ++g_verified_repentance;
+    log_line("bridge_observation=code_and_bindings_match; no hook installed; callback execution untested");
+    return true;
+}
+
 static bool log_repentance_windows(u64 base) {
     static const struct {
         const char *name;
@@ -226,6 +273,7 @@ static bool log_repentance_windows(u64 base) {
         log_line("code_window=%s address=0x%016" PRIX64 " signature=%s",
                  windows[i].name, (uint64_t)address, match ? "MATCH" : "MISMATCH");
         log_header(bytes, sizeof(bytes));
+        if (!match) return fail_message("A Repentance code window differs.");
     }
     return true;
 }
@@ -253,6 +301,7 @@ static void log_loader_got(const CheatProcessMetadata *metadata) {
     }
     log_line("run_repentance_GOT_address=0x%016" PRIX64 " pointer=0x%016" PRIX64,
              (uint64_t)address, (uint64_t)pointer);
+    g_loader_run_pointer = pointer;
     if (pointer >= 0x4C0840)
         log_line("run_repentance_base_candidate=0x%016" PRIX64 " (pointer minus 0x4C0840; unverified)",
                  (uint64_t)(pointer - 0x4C0840));
@@ -303,7 +352,7 @@ static bool snapshot_mappings(size_t *readable_regions, size_t *nro_regions) {
                 ++*nro_regions;
                 log_build_id("  nro_build_id", header + 0x40);
                 if (memcmp(header + 0x40, k_repentance_build_id, 0x20) == 0 &&
-                    !log_repentance_windows(mapping->addr)) return false;
+                    (!log_repentance_windows(mapping->addr) || !verify_bridge_contract(mapping->addr))) return false;
             } else {
                 log_line("  NRO0_magic=not observed; this does not exclude a loaded NRO");
             }
@@ -349,6 +398,7 @@ static bool take_snapshot(void) {
     rc = pmdmntGetApplicationProcessId(&final_pid);
     if (R_FAILED(rc)) return fail_result("recheck running application", rc);
     if (final_pid != pid) return fail_message("Application changed during observation.");
+    if (g_verified_repentance != 1) return fail_message("Expected exactly one verified Repentance module.");
     log_line("snapshot_complete=yes readable_executable_regions=%zu NRO0_regions=%zu",
              readable_regions, nro_regions);
     printf("Snapshot complete: %zu executable headers, %zu NRO headers.\n", readable_regions, nro_regions);
@@ -368,7 +418,7 @@ static bool prepare_log(void) {
         printf("Cannot open log (errno %d).\n", errno);
         return false;
     }
-    log_line("IsaacModuleSnapshot 0.1.0");
+    log_line("IsaacModuleSnapshot 0.2.0 - bridge contract");
     log_line("observation=bounded executable headers; game memory is never written");
     return true;
 }
@@ -378,7 +428,7 @@ int main(int argc, char **argv) {
     (void)argv;
     consoleInit(NULL);
     printf("The Modding of Isaac - Module Snapshot\n\n");
-    printf("Keep Isaac running; launch this from Album.\n");
+    printf("Keep Isaac running; use the Homebrew route that worked for you.\n");
     bool ok = prepare_log();
     if (ok) ok = take_snapshot();
     if (g_log) {

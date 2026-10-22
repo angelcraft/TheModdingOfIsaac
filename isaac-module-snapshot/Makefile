@@ -40,7 +40,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 TARGET		:=	IsaacModuleSnapshot
 APP_TITLE	:=	IsaacModuleSnapshot
 APP_AUTHOR	:=	TheModdingOfIsaac
-APP_VERSION	:=	0.1.0
+APP_VERSION	:=	0.2.0
 NO_ICON		:=	1
 BUILD		:=	build
 SOURCES		:=	source
