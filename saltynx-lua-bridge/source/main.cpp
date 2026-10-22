@@ -213,8 +213,8 @@ void dispatch_lua_update() {
 extern "C" void isaac_update_hook() {
     // Isaac's update thread must be the only Lua state owner.
     // If this hook is entered recursively or concurrently, call the original only.
-    if (__atomic_exchange_n(&g_hook_busy, 1u, __ATOMIC_ACQUIRE) != 0 ||
-        g_validation_failed) {
+    if (g_validation_failed ||
+        __atomic_exchange_n(&g_hook_busy, 1u, __ATOMIC_ACQUIRE) != 0) {
         if (g_original_update) g_original_update();
         return;
     }
