@@ -1,30 +1,58 @@
-# Isaac Lua frame bridge 0.3.0
+# IsaacLuaBridge 0.3.5 — guarded first frame callback
 
-This is the first guarded in-game callback experiment for the exact verified
-Nintendo Switch Repentance build. A small worker waits for the late Repentance
-NRO, validates it, verifies the writable GOT still targets the original
-`IsaacUpdate`, and replaces only that slot. On first invocation it derives the ASLR base from the verified
-caller, checks the executable mapping, NRO Build ID, complete 36-byte original
-function and call boundary, then calls the untouched original function directly.
+Experimental first in-game Lua callback for the exact verified Nintendo Switch Repentance NRO.
+**Not a playable Specialist mod.** No player/entity/music API is exposed.
 
-After the original returns, it invokes `on_update(frame)` in a persistent Lua
-5.1 state. This build limits Lua dispatch to three calls. It exposes no Isaac
-gameplay API and is not yet the playable Specialist mod.
+## What it actually does
 
-Install both `IsaacLuaBridge.elf` and `bridge.lua` in:
+1. At plugin startup, verifies the Isaac title, prepares persistent Lua 5.1, checks
+   the main module mapping, and starts a late-NRO worker.
+2. The worker waits for Repentance, validates the NRO Build ID, the complete
+   `IsaacUpdate` 36-byte function and its call boundary, and checks the original
+   GOT target and writable mapping.
+3. If all checks pass, it atomically redirects **only** the `IsaacUpdate` GOT slot.
+   There is no inline patch or trampoline.
+4. The wrapper calls the untouched original function before dispatching
+   `on_update(frame)`, at most three times. The Lua state is guarded against
+   simultaneous callback dispatch.
+5. The first successful Lua callback stores stage 8 in plugin memory. Stage 9
+   records a Lua callback error. No file IPC is used inside the worker or hook.
 
-`SaltySD/plugins/010021C000B6A000/`
+The existing `IsaacModuleSnapshot.nro` (v0.3.0 from **this same branch**) can
+read that stage and the actual GOT binding without modifying game memory.
 
-Remove or rename the previous `IsaacLuaBridge.elf` first. Keep the previous ELF
-as a backup outside that folder. On startup, `bridge-startup.log` should say the
-Lua state is ready and the late import replacement was registered. Runtime
-success is also emitted through `svcOutputDebugString` as
-`first in-game Lua callback completed`. The first successful callback also
-writes `bridge-runtime.log` beside the ELF. Its expected result is
-`contract=verified`, `original_isaac_update=called`, and
-`lua_on_update=success`.
+## Single device test (make a backup first)
 
-This build is specific to Repentance NRO Build ID
-`91C73FDD575061318D68886316AFEAC72388B2AB`. It contains no game binary and no
-inline patch or displaced instruction trampoline.
+Use **both** newly built artifacts from this branch. Do not mix the new
+`IsaacLuaBridge.elf` with the older `IsaacModuleSnapshot.nro`.
 
+- Copy `IsaacLuaBridge.elf` and `bridge.lua` to
+  `sd:/SaltySD/plugins/010021C000B6A000/` after backing up or renaming the old ELF.
+- Copy `IsaacModuleSnapshot.nro` to
+  `sd:/switch/TheModdingOfIsaac/`, backing up the old NRO.
+- Fully close and relaunch Isaac, wait until you can move in a room, and let
+  several frames run.
+- Use the **previously working homebrew access method** while Isaac remains
+  running; launch `IsaacModuleSnapshot.nro` once. Do not use a Homebrew Menu
+  route that previously froze the console.
+- Read the result on screen and, if needed, send the one
+  `sd:/switch/TheModdingOfIsaac/module-snapshot.log` file.
+
+Look for `bridge_callback=SUCCESS` together with
+`bridge_got_hook=yes` and `bridge_stage=8`. This shows `on_update(frame)`
+actually completed, **not** that Specialist already works.
+
+A normal startup log only proves Lua was initialized and the worker launched;
+it does **not** prove the worker installed the GOT hook. There is deliberately
+no `bridge-runtime.log`: the late worker cannot safely use the startup-only
+SaltySD file interface.
+
+## Stop/rollback
+
+If Isaac freezes/crashes, remove the new `IsaacLuaBridge.elf` from the plugin
+folder, restore the backup, and restart normally. Keep crash logs; do not
+repeat the same failing test without examining them first.
+
+This test is restricted to Repentance NRO build
+`91C73FDD575061318D68886316AFEAC72388B2AB`. Compilation in GitHub
+Actions is **not** proof of safe device execution.
