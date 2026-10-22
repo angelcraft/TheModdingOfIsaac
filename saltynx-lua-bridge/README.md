@@ -18,7 +18,10 @@ Remove or rename the previous `IsaacLuaBridge.elf` first. Keep the previous ELF
 as a backup outside that folder. On startup, `bridge-startup.log` should say the
 Lua state is ready and the late import replacement was registered. Runtime
 success is also emitted through `svcOutputDebugString` as
-`first in-game Lua callback completed`.
+`first in-game Lua callback completed`. The first successful callback also
+writes `bridge-runtime.log` beside the ELF. Its expected result is
+`contract=verified`, `original_isaac_update=called`, and
+`lua_on_update=success`.
 
 This build is specific to Repentance NRO Build ID
 `91C73FDD575061318D68886316AFEAC72388B2AB`. It contains no game binary and no

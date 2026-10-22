@@ -12,6 +12,11 @@ extern "C" {
 #include <cstdio>
 #include <cstring>
 
+extern "C" {
+Result SaltySD_Init() __attribute__((weak));
+Result SaltySD_Deinit() __attribute__((weak));
+}
+
 namespace {
 constexpr u64 kExpectedTitleId = 0x010021C000B6A000ULL;
 constexpr uintptr_t kCallerReturnOffset = 0x4C0A10;
@@ -51,6 +56,7 @@ unsigned g_frame = 0;
 unsigned g_callback_count = 0;
 bool g_inside_hook = false;
 bool g_validation_failed = false;
+bool g_runtime_result_written = false;
 
 void trace(const char* message) {
     if (!message) return;
@@ -177,6 +183,20 @@ void dispatch_lua_update() {
         g_callback_count = kCallbackLimit;
     } else if (g_callback_count == 1) {
         trace("IsaacLuaBridge: first in-game Lua callback completed");
+        if (!g_runtime_result_written && SaltySD_Init && SaltySD_Deinit &&
+            R_SUCCEEDED(SaltySD_Init())) {
+            FILE* result = SaltySDCore_fopen(
+                "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-runtime.log", "wb");
+            if (result) {
+                const char* message =
+                    "contract=verified\noriginal_isaac_update=called\n"
+                    "lua_on_update=success\ncallback_limit=3\n";
+                SaltySDCore_fwrite(message, 1, std::strlen(message), result);
+                SaltySDCore_fclose(result);
+                g_runtime_result_written = true;
+            }
+            SaltySD_Deinit();
+        }
     }
 }
 
