@@ -117,8 +117,22 @@ static void report_bridge_stage(void) {
         log_line("bridge_callback=unknown (stage address unavailable)");
         return;
     }
+    // A stale or mistyped marker may point anywhere. Only accept a candidate
+    // if the hook pointer itself belongs to an executable mapping.
+    if (!g_bridge_hook_address) {
+        log_line("bridge_callback=unknown (hook address unavailable)");
+        return;
+    }
+    MemoryInfo hook_region = {0};
+    Result rc = cheat_query(&hook_region, g_bridge_hook_address);
+    if (R_FAILED(rc) || (hook_region.perm & Perm_Rx) != Perm_Rx ||
+        hook_region.addr > g_bridge_hook_address ||
+        g_bridge_hook_address - hook_region.addr >= hook_region.size) {
+        log_line("bridge_callback=unknown (hook pointer not in executable mapping)");
+        return;
+    }
     MemoryInfo region = {0};
-    Result rc = cheat_query(&region, g_bridge_stage_address);
+    rc = cheat_query(&region, g_bridge_stage_address);
     if (R_FAILED(rc) || !(region.perm & Perm_R) ||
         region.addr > g_bridge_stage_address ||
         g_bridge_stage_address - region.addr > region.size ||
@@ -134,12 +148,17 @@ static void report_bridge_stage(void) {
     }
     log_line("bridge_stage=%" PRIu32 " bridge_got_hook=%s",
              (uint32_t)stage, g_bridge_hook_observed ? "yes" : "no");
-    if (stage == 8 && g_bridge_hook_observed)
+    if (stage == 8 && g_bridge_hook_observed) {
         log_line("bridge_callback=SUCCESS (Lua on_update executed in game)");
-    else if (stage == 9)
+        printf("Lua on_update(): SUCCESS!\n");
+    } else if (stage == 9 && g_bridge_hook_observed) {
         log_line("bridge_callback=ERROR (Lua on_update failed)");
-    else
+        printf("Lua callback: ERROR (stage 9).\n");
+    } else {
         log_line("bridge_callback=NOT_CONFIRMED");
+        printf("Lua callback not confirmed (stage %" PRIu32 ", hook %s).\n",
+               (uint32_t)stage, g_bridge_hook_observed ? "observed" : "absent");
+    }
 }
 
 /* Minimal client: deliberately includes only observation and guarded attach. */
