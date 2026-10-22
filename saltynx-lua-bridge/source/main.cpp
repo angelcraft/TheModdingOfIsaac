@@ -82,6 +82,18 @@ void trace(const char* message) {
     }
 }
 
+void worker_trace(const char* message) {
+    if (!message || !SaltySD_Init || !SaltySD_Deinit || R_FAILED(SaltySD_Init())) return;
+    FILE* file = SaltySDCore_fopen(
+        "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-worker.log", "ab");
+    if (file) {
+        SaltySDCore_fwrite(message, 1, std::strlen(message), file);
+        SaltySDCore_fwrite("\n", 1, 1, file);
+        SaltySDCore_fclose(file);
+    }
+    SaltySD_Deinit();
+}
+
 int lua_log(lua_State* state) {
     const char* message = lua_tostring(state, 1);
     trace(message ? message : "(Lua non-string)");
@@ -235,27 +247,43 @@ void bridge_worker(void*) {
             const uintptr_t next = info.addr + info.size;
             if ((info.perm & Perm_X) && info.size >= kMinimumTextSize &&
                 validate_image(info.addr)) {
+                worker_trace("nro=verified");
                 const uintptr_t got = info.addr + 0xAA5C20;
                 MemoryInfo got_info = {};
                 if (R_SUCCEEDED(svcQueryMemory(&got_info, &page_info, got))) {
                     void** slot = reinterpret_cast<void**>(got);
                     void* expected = reinterpret_cast<void*>(info.addr + kIsaacUpdateOffset);
                     if (*slot == expected) {
+                        worker_trace("got=original");
                         g_original_update = reinterpret_cast<IsaacUpdate>(expected);
                         void* replacement = reinterpret_cast<void*>(isaac_update_hook);
                         if (got_info.perm & Perm_W) {
+                            worker_trace("patch=direct-write");
                             __atomic_store_n(slot, replacement, __ATOMIC_RELEASE);
                         } else if (SaltySD_Init && SaltySD_Deinit &&
                                    SaltySDCore_ReplaceModuleImport &&
                                    R_SUCCEEDED(SaltySD_Init())) {
+                            FILE* stage = SaltySDCore_fopen(
+                                "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-worker.log", "ab");
+                            if (stage) {
+                                const char* message = "patch=saltysd\n";
+                                SaltySDCore_fwrite(message, 1, std::strlen(message), stage);
+                                SaltySDCore_fclose(stage);
+                            }
                             SaltySDCore_ReplaceModuleImport(
                                 reinterpret_cast<void*>(info.addr),
                                 "_ZN15IsaacRepentance11IsaacUpdateEv",
                                 replacement, true);
                             SaltySD_Deinit();
                         }
-                        if (*slot == replacement)
+                        if (*slot == replacement) {
+                            worker_trace("got=replaced");
                             trace("IsaacLuaBridge: verified IsaacUpdate GOT installed");
+                        } else {
+                            worker_trace("got=unchanged");
+                        }
+                    } else {
+                        worker_trace("got=unexpected");
                     }
                 }
                 worker_exit();
@@ -302,7 +330,7 @@ int main(int, char**) {
 
     g_startup_log = SaltySDCore_fopen(
         "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-startup.log", "wb");
-    trace("IsaacLuaBridge 0.3.0: preparing guarded frame callback");
+    trace("IsaacLuaBridge 0.3.1: preparing guarded frame callback");
     if (!prepare_lua()) {
         if (g_startup_log) SaltySDCore_fclose(g_startup_log);
         g_startup_log = nullptr;
