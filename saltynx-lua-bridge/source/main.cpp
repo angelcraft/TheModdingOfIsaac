@@ -10,9 +10,6 @@ extern "C" {
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 
 
 namespace {
@@ -22,8 +19,8 @@ constexpr uintptr_t kIsaacUpdateOffset = 0x3B37F0;
 constexpr uintptr_t kMinimumTextSize = kCallerReturnOffset + 8;
 constexpr size_t kMaxScriptBytes = 256 * 1024;
 constexpr unsigned kCallbackLimit = 3;
-constexpr const char* kTelemetryHost = "10.10.0.165";
-constexpr unsigned kTelemetryPort = 47821;
+constexpr unsigned kNroWaitAttempts = 800; // 20 seconds maximum, 25ms each
+constexpr uintptr_t kLazyResolverOffset = 0x66FAA0; // observed shared late-import resolver
 
 // Query the actual mapping of each read; text and GOT live in different mappings.
 bool readable_range(uintptr_t address, size_t length) {
@@ -59,7 +56,6 @@ using IsaacUpdate = void (*)();
 
 alignas(16) char g_heap[0x40000];
 alignas(0x1000) char g_worker_stack[0x4000];
-alignas(0x1000) char g_telemetry_stack[0x4000];
 void* g_original_lr = nullptr;
 lua_State* g_lua = nullptr;
 IsaacUpdate g_original_update = nullptr;
@@ -241,73 +237,6 @@ extern "C" void isaac_update_hook() {
     __atomic_store_n(&g_hook_busy, 0u, __ATOMIC_RELEASE);
 }
 
-// Network IPC only runs on the background worker thread, NEVER on Isaac's
-// game update thread. Failure of networking must not disable Lua/the game.
-struct Telemetry {
-    int fd = -1;
-    sockaddr_in destination = {};
-};
-
-Telemetry telemetry_open() {
-    Telemetry result;
-    // The network service may be unavailable in the injected title.
-    if (R_FAILED(socketInitializeDefault())) return result;
-    result.fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (result.fd < 0) return result;
-    result.destination.sin_family = AF_INET;
-    result.destination.sin_port = htons(static_cast<u16>(kTelemetryPort));
-    result.destination.sin_addr.s_addr = inet_addr(kTelemetryHost);
-    return result;
-}
-
-void telemetry_send(const Telemetry& t, const char* event) {
-    if (t.fd < 0 || !event) return;
-    char message[176] = {};
-    const int n = std::snprintf(message, sizeof(message), "ILB1|%s", event);
-    if (n <= 0 || n >= static_cast<int>(sizeof(message))) return;
-    sendto(t.fd, message, static_cast<size_t>(n), 0,
-           reinterpret_cast<const sockaddr*>(&t.destination),
-           sizeof(t.destination));
-}
-
-// Never make the module-loading worker wait for a network service.
-void telemetry_worker(void*) {
-    const Telemetry t = telemetry_open();
-    if (t.fd < 0) {
-        const char* error = "IsaacLiveBridge: socket initialization failed; in-game hook continues";
-        svcOutputDebugString(error, std::strlen(error));
-        svcExitThread();
-    }
-
-    u32 last = 0xFFFFFFFFu;
-    unsigned ticks = 0;
-    for (;;) {
-        const u32 stage = __atomic_load_n(&g_bridge_stage, __ATOMIC_ACQUIRE);
-        if (stage != last || ticks >= 10) {
-            const char* event = "unknown";
-            switch (stage) {
-                case 0: event = "startup"; break;
-                case 1: event = "waiting_for_repentance"; break;
-                case 2: event = "repentance_verified"; break;
-                case 3: event = "original_got_verified"; break;
-                case 4: event = "hook_installed"; break;
-                case 5: event = "got_readonly"; break;
-                case 6: event = "got_mismatch"; break;
-                case 7: event = "nro_timeout"; break;
-                case 8: event = "lua_callback_success"; break;
-                case 9: event = "lua_callback_error"; break;
-            }
-            char message[128] = {};
-            std::snprintf(message, sizeof(message), "event=%s stage=%u", event, stage);
-            telemetry_send(t, message);
-            last = stage;
-            ticks = 0;
-        }
-        ++ticks;
-        svcSleepThread(1000 * 1000 * 1000LL);
-    }
-}
-
 [[noreturn]] void worker_exit() {
     svcExitThread();
     for (;;) {}
@@ -315,60 +244,84 @@ void telemetry_worker(void*) {
 
 void bridge_worker(void*) {
     set_stage(1);
-    // The verified main loader slot supplies the late NRO base directly.
-    // SaltySDCore_getCodeStart() points at rtld; main follows its 0x4000 mapping.
+    // The verified loader slot publishes the Repentance NRO entry.
+    // Do not assume its lazy imports are resolved at the exact instant
+    // NRO0 becomes visible.
     if (!g_main_base || g_main_base > UINTPTR_MAX - 0x10CC78) {
         set_stage(6);
         worker_exit();
     }
     const uintptr_t loader_slot = g_main_base + 0x10CC78;
-    for (unsigned attempt = 0; attempt < 4800; ++attempt) {
+    bool saw_verified_nro = false;
+
+    for (unsigned attempt = 0; attempt < kNroWaitAttempts; ++attempt) {
         if (readable_range(loader_slot, sizeof(uintptr_t))) {
             const uintptr_t entry = __atomic_load_n(
                 reinterpret_cast<uintptr_t*>(loader_slot), __ATOMIC_ACQUIRE);
             if (entry >= 0x4C0840) {
                 const uintptr_t base = entry - 0x4C0840;
                 if (validate_image(base)) {
-                    set_stage(2);
+                    if (!saw_verified_nro) {
+                        saw_verified_nro = true;
+                        set_stage(2);
+                    }
                     const uintptr_t got = base + 0xAA5C20;
                     MemoryInfo got_info = {};
                     u32 page_info = 0;
                     if (R_SUCCEEDED(svcQueryMemory(&got_info, &page_info, got)) &&
                         readable_range(got, sizeof(void*))) {
-                        void** slot = reinterpret_cast<void**>(got);
-                        void* expected = reinterpret_cast<void*>(base + kIsaacUpdateOffset);
-                        void* actual = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
-                        if (actual == expected) {
-                            set_stage(3);
-                            g_original_update = reinterpret_cast<IsaacUpdate>(expected);
-                            void* replacement = reinterpret_cast<void*>(isaac_update_hook);
-                            if (!(got_info.perm & Perm_W)) {
-                                set_stage(5);
-                                worker_exit();
-                            }
-                            if (__atomic_compare_exchange_n(slot, &expected, replacement,
-                                                            false, __ATOMIC_ACQ_REL,
-                                                            __ATOMIC_ACQUIRE)) {
-                                set_stage(4);
-                                trace("IsaacLuaBridge: verified IsaacUpdate GOT installed");
-                                worker_exit();
-                            } else {
-                                set_stage(6);
-                            }
-                        } else {
-                            set_stage(6);
+                        if (!(got_info.perm & Perm_W)) {
+                            set_stage(5);
+                            worker_exit();
                         }
-                    } else {
-                        set_stage(6);
+
+                        void** slot = reinterpret_cast<void**>(got);
+                        void* actual = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
+                        void* original = reinterpret_cast<void*>(base + kIsaacUpdateOffset);
+                        void* replacement = reinterpret_cast<void*>(isaac_update_hook);
+                        const uintptr_t lazy_address = base + kLazyResolverOffset;
+
+                        // A shared lazy-import resolver was observed at this
+                        // exact offset in previous device snapshots. It must
+                        // still map to executable memory before being accepted.
+                        MemoryInfo lazy_info = {};
+                        const bool lazy_executable =
+                            R_SUCCEEDED(svcQueryMemory(&lazy_info, &page_info, lazy_address)) &&
+                            lazy_info.addr <= lazy_address &&
+                            lazy_address - lazy_info.addr < lazy_info.size &&
+                            (lazy_info.perm & Perm_X);
+
+                        if (actual == original ||
+                            (reinterpret_cast<uintptr_t>(actual) == lazy_address &&
+                             lazy_executable)) {
+                            set_stage(3);
+                            g_original_update = reinterpret_cast<IsaacUpdate>(original);
+                            // Aggressive, one-slot install: replace only the
+                            // validated original or shared lazy resolver. A
+                            // concurrent relocation fails CAS rather than
+                            // overwriting an unrecognized destination.
+                            void* expected = actual;
+                            if (__atomic_compare_exchange_n(
+                                    slot, &expected, replacement, false,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+                                set_stage(4);
+                                worker_exit();
+                            }
+                            // Loader won the race; retry with fresh GOT value.
+                        } else if (actual == replacement) {
+                            // This very instance already owns the slot.
+                            set_stage(4);
+                            worker_exit();
+                        }
+                        // All unknown GOT targets are left untouched. Retry
+                        // briefly instead of prematurely ending at stage 6.
                     }
-                    worker_exit();
                 }
             }
         }
         svcSleepThread(25 * 1000 * 1000LL);
     }
-    set_stage(7);
-    trace("IsaacLuaBridge: Repentance loader wait timed out");
+    set_stage(saw_verified_nro ? 6 : 7);
     worker_exit();
 }
 } // namespace
@@ -405,7 +358,7 @@ int main(int, char**) {
 
     g_startup_log = SaltySDCore_fopen(
         "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-startup.log", "wb");
-    trace("IsaacLuaBridge 0.3.7: independent LAN telemetry worker");
+    trace("IsaacLuaBridge 0.3.8: bounded eager GOT hook");
     if (!prepare_lua()) {
         if (g_startup_log) SaltySDCore_fclose(g_startup_log);
         g_startup_log = nullptr;
@@ -474,20 +427,6 @@ int main(int, char**) {
     svcCloseHandle(worker);
     trace("IsaacLuaBridge: NRO wait thread started");
 
-    // Network failures cannot block the worker that installs the hook.
-    Handle network_thread = INVALID_HANDLE;
-    const Result network_create = svcCreateThread(
-        &network_thread, reinterpret_cast<void*>(telemetry_worker), nullptr,
-        g_telemetry_stack + sizeof(g_telemetry_stack), 0x2D, -2);
-    if (R_SUCCEEDED(network_create)) {
-        const Result network_start = svcStartThread(network_thread);
-        if (R_FAILED(network_start)) {
-            trace("IsaacLiveBridge: optional telemetry thread start failed");
-        }
-        svcCloseHandle(network_thread);
-    } else {
-        trace("IsaacLiveBridge: optional telemetry thread create failed");
-    }
     return 0;
 }
 
