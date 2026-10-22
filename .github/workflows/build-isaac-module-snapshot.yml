@@ -2,6 +2,12 @@ name: Build Isaac module snapshot
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - saltynx-lua-runtime-probe
+    paths:
+      - "isaac-module-snapshot/**"
+      - ".github/workflows/build-isaac-module-snapshot.yml"
   pull_request:
     paths:
       - "isaac-module-snapshot/**"
