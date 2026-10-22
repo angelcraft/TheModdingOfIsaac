@@ -220,6 +220,11 @@ extern "C" void isaac_update_hook() {
     g_inside_hook = false;
 }
 
+[[noreturn]] void worker_exit() {
+    svcExitThread();
+    for (;;) {}
+}
+
 void bridge_worker(void*) {
     for (unsigned attempt = 0; attempt < 1200; ++attempt) {
         uintptr_t address = 0;
@@ -253,7 +258,7 @@ void bridge_worker(void*) {
                             trace("IsaacLuaBridge: verified IsaacUpdate GOT installed");
                     }
                 }
-                return;
+                worker_exit();
             }
             if (next <= address) break;
             address = next;
@@ -261,6 +266,7 @@ void bridge_worker(void*) {
         svcSleepThread(25 * 1000 * 1000LL);
     }
     trace("IsaacLuaBridge: Repentance NRO wait timed out");
+    worker_exit();
 }
 } // namespace
 
