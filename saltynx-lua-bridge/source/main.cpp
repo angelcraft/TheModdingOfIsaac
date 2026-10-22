@@ -59,6 +59,7 @@ using IsaacUpdate = void (*)();
 
 alignas(16) char g_heap[0x40000];
 alignas(0x1000) char g_worker_stack[0x4000];
+alignas(0x1000) char g_telemetry_stack[0x4000];
 void* g_original_lr = nullptr;
 lua_State* g_lua = nullptr;
 IsaacUpdate g_original_update = nullptr;
@@ -269,17 +270,36 @@ void telemetry_send(const Telemetry& t, const char* event) {
            sizeof(t.destination));
 }
 
-// Sends only state changes + one heartbeat each 10 seconds.
-// Continuous telemetry is separate from the original IsaacUpdate dispatch.
-[[noreturn]] void telemetry_follow(const Telemetry& t) {
+// Never make the module-loading worker wait for a network service.
+void telemetry_worker(void*) {
+    const Telemetry t = telemetry_open();
+    if (t.fd < 0) {
+        const char* error = "IsaacLiveBridge: socket initialization failed; in-game hook continues";
+        svcOutputDebugString(error, std::strlen(error));
+        svcExitThread();
+    }
+
     u32 last = 0xFFFFFFFFu;
     unsigned ticks = 0;
     for (;;) {
         const u32 stage = __atomic_load_n(&g_bridge_stage, __ATOMIC_ACQUIRE);
         if (stage != last || ticks >= 10) {
-            char event[96] = {};
-            std::snprintf(event, sizeof(event), "event=bridge_status stage=%u", stage);
-            telemetry_send(t, event);
+            const char* event = "unknown";
+            switch (stage) {
+                case 0: event = "startup"; break;
+                case 1: event = "waiting_for_repentance"; break;
+                case 2: event = "repentance_verified"; break;
+                case 3: event = "original_got_verified"; break;
+                case 4: event = "hook_installed"; break;
+                case 5: event = "got_readonly"; break;
+                case 6: event = "got_mismatch"; break;
+                case 7: event = "nro_timeout"; break;
+                case 8: event = "lua_callback_success"; break;
+                case 9: event = "lua_callback_error"; break;
+            }
+            char message[128] = {};
+            std::snprintf(message, sizeof(message), "event=%s stage=%u", event, stage);
+            telemetry_send(t, message);
             last = stage;
             ticks = 0;
         }
@@ -295,12 +315,10 @@ void telemetry_send(const Telemetry& t, const char* event) {
 
 void bridge_worker(void*) {
     set_stage(1);
-    const Telemetry t = telemetry_open();
-    telemetry_send(t, "event=worker_started stage=1");
     // The verified main loader slot supplies the late NRO base directly.
     // SaltySDCore_getCodeStart() points at rtld; main follows its 0x4000 mapping.
     if (!g_main_base || g_main_base > UINTPTR_MAX - 0x10CC78) {
-        telemetry_send(t, "event=main_module_unavailable");
+        set_stage(6);
         worker_exit();
     }
     const uintptr_t loader_slot = g_main_base + 0x10CC78;
@@ -312,7 +330,6 @@ void bridge_worker(void*) {
                 const uintptr_t base = entry - 0x4C0840;
                 if (validate_image(base)) {
                     set_stage(2);
-                    telemetry_send(t, "event=repentance_verified stage=2");
                     const uintptr_t got = base + 0xAA5C20;
                     MemoryInfo got_info = {};
                     u32 page_info = 0;
@@ -323,12 +340,10 @@ void bridge_worker(void*) {
                         void* actual = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
                         if (actual == expected) {
                             set_stage(3);
-                            telemetry_send(t, "event=original_got_verified stage=3");
                             g_original_update = reinterpret_cast<IsaacUpdate>(expected);
                             void* replacement = reinterpret_cast<void*>(isaac_update_hook);
                             if (!(got_info.perm & Perm_W)) {
                                 set_stage(5);
-                                telemetry_send(t, "event=got_readonly stage=5");
                                 worker_exit();
                             }
                             if (__atomic_compare_exchange_n(slot, &expected, replacement,
@@ -336,10 +351,7 @@ void bridge_worker(void*) {
                                                             __ATOMIC_ACQUIRE)) {
                                 set_stage(4);
                                 trace("IsaacLuaBridge: verified IsaacUpdate GOT installed");
-                                telemetry_send(t, "event=hook_installed stage=4");
-                                // The worker stays alive for status updates from
-                                // the game thread, including callback success.
-                                telemetry_follow(t);
+                                worker_exit();
                             } else {
                                 set_stage(6);
                             }
@@ -356,7 +368,6 @@ void bridge_worker(void*) {
         svcSleepThread(25 * 1000 * 1000LL);
     }
     set_stage(7);
-    telemetry_send(t, "event=nro_timeout stage=7");
     trace("IsaacLuaBridge: Repentance loader wait timed out");
     worker_exit();
 }
@@ -394,7 +405,7 @@ int main(int, char**) {
 
     g_startup_log = SaltySDCore_fopen(
         "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-startup.log", "wb");
-    trace("IsaacLuaBridge 0.3.6: guarded frame callback + LAN events");
+    trace("IsaacLuaBridge 0.3.7: independent LAN telemetry worker");
     if (!prepare_lua()) {
         if (g_startup_log) SaltySDCore_fclose(g_startup_log);
         g_startup_log = nullptr;
@@ -462,8 +473,21 @@ int main(int, char**) {
     }
     svcCloseHandle(worker);
     trace("IsaacLuaBridge: NRO wait thread started");
-    if (g_startup_log) SaltySDCore_fclose(g_startup_log);
-    g_startup_log = nullptr;
+
+    // Network failures cannot block the worker that installs the hook.
+    Handle network_thread = INVALID_HANDLE;
+    const Result network_create = svcCreateThread(
+        &network_thread, reinterpret_cast<void*>(telemetry_worker), nullptr,
+        g_telemetry_stack + sizeof(g_telemetry_stack), 0x2D, -2);
+    if (R_SUCCEEDED(network_create)) {
+        const Result network_start = svcStartThread(network_thread);
+        if (R_FAILED(network_start)) {
+            trace("IsaacLiveBridge: optional telemetry thread start failed");
+        }
+        svcCloseHandle(network_thread);
+    } else {
+        trace("IsaacLiveBridge: optional telemetry thread create failed");
+    }
     return 0;
 }
 
