@@ -1,4 +1,4 @@
-# IsaacLuaBridge 0.3.6 — guarded first frame callback
+# IsaacLuaBridge 0.3.7 — guarded first frame callback
 
 Experimental first in-game Lua callback for the exact verified Nintendo Switch Repentance NRO.
 **Not a playable Specialist mod.** No player/entity/music API is exposed.
@@ -23,11 +23,14 @@ read that stage and the actual GOT binding without modifying game memory.
 
 ## Optional LiveBridge local streaming (experimental)
 
-This build also attempts to send small **UDP** status events on the local Wi-Fi
-to **Windows 10.10.0.165:47821** from the bridge's background worker; the Switch
-is expected to have IP **10.10.0.162**. It never sends from the frame callback.
-Socket initialization can fail in this injected environment; that must not
-prevent gameplay, and a successful build alone does not prove network delivery.
+This build attempts to send small **UDP** status events on the local Wi-Fi
+to **Windows 10.10.0.165:47821** from a *separate optional networking thread*;
+the Switch is expected to have IP **10.10.0.162**. It never sends from the
+frame callback or the module-loading/hook worker. The networking thread sends
+stage changes and a heartbeat every ~10 seconds. If socket initialization
+fails in the injected environment, the main worker can still install the
+hook, but there will be no packets. A successful build alone does not
+prove network delivery.
 
 The same GitHub Actions artifact contains `windows/IsaacLiveBridge.ps1`.
 Unzip it into a folder and run from that folder in **Windows PowerShell**:
