@@ -122,6 +122,7 @@ int lua_log(lua_State* state) {
 }
 
 #include "pedestal_reader.h"
+#include "dance_driver.h"
 
 void lua_instruction_limit(lua_State* state, lua_Debug*) {
     luaL_error(state, "IsaacLuaBridge: Lua instruction budget exceeded");
@@ -135,7 +136,7 @@ int lua_get_frame_count(lua_State* state) {
 
 int lua_get_runtime_state(lua_State* state) {
     lua_createtable(state, 0, 7);
-    lua_pushliteral(state, "0.5.0");
+    lua_pushliteral(state, "0.6.0");
     lua_setfield(state, -2, "version");
     lua_pushliteral(state, "91C73FDD575061318D68886316AFEAC72388B2AB");
     lua_setfield(state, -2, "target_build_id");
@@ -162,6 +163,8 @@ void register_bridge_api(lua_State* state) {
     lua_setfield(state, -2, "GetRuntimeState");
     lua_pushcfunction(state, lua_get_room_collectibles);
     lua_setfield(state, -2, "GetRoomCollectibles");
+    lua_pushcfunction(state, lua_set_specialist_dance);
+    lua_setfield(state, -2, "SetSpecialistDance");
     lua_setglobal(state, "IsaacBridge");
 }
 
@@ -423,7 +426,7 @@ int main(int, char**) {
 
     g_startup_log = SaltySDCore_fopen(
         "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-startup.log", "wb");
-    trace("IsaacLuaBridge 0.5.0: read-only pedestal API");
+    trace("IsaacLuaBridge 0.6.0: Specialist costume candidate");
     if (!prepare_lua()) {
         if (g_startup_log) SaltySDCore_fclose(g_startup_log);
         g_startup_log = nullptr;
@@ -464,6 +467,9 @@ int main(int, char**) {
     std::snprintf(marker, sizeof(marker), "bridge_pedestal_address=0x%016llX",
                   static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(&g_pedestal)));
     trace(marker);
+    std::snprintf(marker, sizeof(marker), "bridge_dance_address=0x%016llX",
+                  static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(&g_dance)));
+    trace(marker);
     Handle worker = INVALID_HANDLE;
     const Result worker_result = svcCreateThread(
         &worker, reinterpret_cast<void*>(bridge_worker), nullptr,
@@ -500,4 +506,5 @@ int main(int, char**) {
 
     return 0;
 }
+
 

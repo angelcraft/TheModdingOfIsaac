@@ -1,16 +1,26 @@
--- Native read candidate: identify collectible pedestals before collection.
-local previous = ""
+-- The Specialist decision lives in Lua. Item 502 was observed on this console.
+local TARGET_ITEM = 502
+local previous, last_error = nil, nil
 function on_update(frame)
-    if frame % 15 ~= 0 then return end
+    if frame % 3 ~= 0 then return end
     local room, reason = IsaacBridge.GetRoomCollectibles()
-    if not room then
-        if previous ~= reason then log("room read: " .. tostring(reason)); previous = reason end
+    local should_dance = false
+    if room and room.in_run then
+        for _, id in ipairs(room.items) do
+            if id == TARGET_ITEM then should_dance = true; break end
+        end
+    end
+    local ok, native_reason = IsaacBridge.SetSpecialistDance(should_dance)
+    if not ok then
+        local message = native_reason or reason or 'unknown'
+        if last_error ~= message then log('Specialist blocked: ' .. message) end
+        last_error = message
         return
     end
-    local signature = tostring(room.manager_state) .. ":" .. table.concat(room.items, ",")
-    if signature ~= previous then
-        log("room collectibles: state=" .. room.manager_state .. " players=" ..
-            room.player_count .. " ids=" .. table.concat(room.items, ","))
-        previous = signature
+    last_error = nil
+    if previous ~= should_dance then
+        log(should_dance and 'Specialist ON: pedestal 502' or 'Specialist OFF: pedestal absent')
+        previous = should_dance
     end
 end
+

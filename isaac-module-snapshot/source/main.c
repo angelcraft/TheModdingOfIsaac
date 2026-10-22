@@ -58,6 +58,7 @@ static u64 g_bridge_stage_address;
 static u64 g_bridge_hook_address;
 static u64 g_bridge_runtime_address;
 static u64 g_bridge_pedestal_address;
+static u64 g_bridge_dance_address;
 static bool g_bridge_hook_observed;
 static bool g_unexpected_bindings;
 
@@ -109,6 +110,8 @@ static void load_bridge_marker(void) {
             g_bridge_runtime_address = parsed;
         else if (sscanf(line, "bridge_pedestal_address=0x%" SCNx64, &parsed) == 1)
             g_bridge_pedestal_address = parsed;
+        else if (sscanf(line, "bridge_dance_address=0x%" SCNx64, &parsed) == 1)
+            g_bridge_dance_address = parsed;
     }
     fclose(file);
     log_line("bridge_marker=%s", (g_bridge_stage_address && g_bridge_hook_address)
@@ -148,6 +151,29 @@ static void report_runtime_counters(void) {
     } else {
         log_line("bridge_continuous=NOT_CONFIRMED");
     }
+}
+
+static void report_dance_state(void) {
+    if (!g_bridge_dance_address) return;
+    struct { u32 magic, version, contract, requested, active, additions;
+             u32 removals, failures, conflicts, last_error, target_id, reserved; } d = {0};
+    _Static_assert(sizeof(d) == 48, "Dance witness layout");
+    MemoryInfo m = {0};
+    Result rc = cheat_query(&m, g_bridge_dance_address);
+    if (R_FAILED(rc) || !(m.perm & Perm_R) || m.addr > g_bridge_dance_address ||
+        g_bridge_dance_address-m.addr > m.size ||
+        sizeof(d) > m.size-(g_bridge_dance_address-m.addr)) {
+        log_line("bridge_dance=unknown (witness inaccessible)"); return;
+    }
+    rc = cheat_read(g_bridge_dance_address, &d, sizeof(d));
+    if (R_FAILED(rc) || d.magic != 0x44414E31u || d.version != 1) {
+        log_line("bridge_dance=unknown (signature mismatch)"); return;
+    }
+    log_line("bridge_dance_contract=%" PRIu32 " requested=%" PRIu32 " active=%" PRIu32 " target_id=%" PRIu32,
+             d.contract,d.requested,d.active,d.target_id);
+    log_line("bridge_dance_additions=%" PRIu32 " removals=%" PRIu32 " failures=%" PRIu32 " conflicts=%" PRIu32 " last_error=%" PRIu32,
+             d.additions,d.removals,d.failures,d.conflicts,d.last_error);
+    log_line("bridge_dance_visual=DEVICE_OBSERVATION_REQUIRED");
 }
 
 static void report_pedestal_state(void) {
@@ -218,6 +244,7 @@ static void report_bridge_stage(void) {
     }
     report_runtime_counters();
     report_pedestal_state();
+    report_dance_state();
     log_line("bridge_stage=%" PRIu32 " bridge_got_hook=%s",
              (uint32_t)stage, g_bridge_hook_observed ? "yes" : "no");
     if (stage == 8 && g_bridge_hook_observed) {
@@ -601,7 +628,7 @@ static bool prepare_log(void) {
         printf("Cannot open log (errno %d).\n", errno);
         return false;
     }
-    log_line("IsaacModuleSnapshot 0.5.0 - pedestal read witness");
+    log_line("IsaacModuleSnapshot 0.6.0 - Specialist costume witness");
     log_line("observation=bounded executable headers; game memory is never written");
     return true;
 }
@@ -643,3 +670,4 @@ int main(int argc, char **argv) {
     consoleExit(NULL);
     return ok ? 0 : 1;
 }
+
