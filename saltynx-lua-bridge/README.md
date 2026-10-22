@@ -1,4 +1,4 @@
-# IsaacLuaBridge 0.3.5 — guarded first frame callback
+# IsaacLuaBridge 0.3.6 — guarded first frame callback
 
 Experimental first in-game Lua callback for the exact verified Nintendo Switch Repentance NRO.
 **Not a playable Specialist mod.** No player/entity/music API is exposed.
@@ -20,6 +20,33 @@ Experimental first in-game Lua callback for the exact verified Nintendo Switch R
 
 The existing `IsaacModuleSnapshot.nro` (v0.3.0 from **this same branch**) can
 read that stage and the actual GOT binding without modifying game memory.
+
+## Optional LiveBridge local streaming (experimental)
+
+This build also attempts to send small **UDP** status events on the local Wi-Fi
+to **Windows 10.10.0.165:47821** from the bridge's background worker; the Switch
+is expected to have IP **10.10.0.162**. It never sends from the frame callback.
+Socket initialization can fail in this injected environment; that must not
+prevent gameplay, and a successful build alone does not prove network delivery.
+
+The same GitHub Actions artifact contains `windows/IsaacLiveBridge.ps1`.
+Unzip it into a folder and run from that folder in **Windows PowerShell**:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\IsaacLiveBridge.ps1
+```
+
+If the Windows firewall blocks LAN UDP, open an administrator PowerShell and
+allow the **Switch only**, on the **Private** profile:
+
+```powershell
+New-NetFirewallRule -DisplayName "Isaac LiveBridge" -Direction Inbound -Protocol UDP -Action Allow -LocalAddress 10.10.0.165 -LocalPort 47821 -RemoteAddress 10.10.0.162 -Profile Private
+```
+
+Remove the rule when finished with `Remove-NetFirewallRule -DisplayName
+"Isaac LiveBridge"`. This receiver only reads local UDP messages and writes
+`livebridge-events.log`; it does **not** grant ChatGPT access to the PC and
+does **not** upload logs to GitHub.
 
 ## Single device test (make a backup first)
 
