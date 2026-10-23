@@ -21,10 +21,11 @@ struct WorkshopCallback {
 WorkshopCallback g_workshop_callbacks[kWorkshopMaxCallbacks] = {};
 size_t g_workshop_callback_count = 0;
 struct WorkshopWitness {
-    u32 magic, version, loaded, errors, registered, callback_success, callback_errors, room_callback_success;
+    u32 magic, version, loaded, errors, callback_success, callback_errors,
+        registered_post_update, registered_post_new_room, room_callback_success;
 };
-static_assert(sizeof(WorkshopWitness) == 32, "Snapshot Workshop witness layout");
-alignas(8) WorkshopWitness g_workshop = {0x574D4431u, 1u, 0u, 0u, 0u, 0u, 0u, 0u};
+static_assert(sizeof(WorkshopWitness) == 36, "Snapshot Workshop witness layout");
+alignas(8) WorkshopWitness g_workshop = {0x574D4431u, 2u, 0u, 0u, 0u, 0u, 0u, 0u, 0u};
 bool g_workshop_loading = false;
 uintptr_t g_workshop_room_token = 0;
 bool g_workshop_room_seen = false;
@@ -36,7 +37,14 @@ void workshop_release_from(lua_State* state, size_t first) {
         luaL_unref(state, LUA_REGISTRYINDEX, cb.function_ref);
         cb = {};
     }
-    g_workshop.registered = static_cast<u32>(g_workshop_callback_count);
+    g_workshop.registered_post_update = 0;
+    g_workshop.registered_post_new_room = 0;
+    for (size_t i = 0; i < g_workshop_callback_count; ++i) {
+        if (g_workshop_callbacks[i].callback_id == kWorkshopPostUpdate)
+            ++g_workshop.registered_post_update;
+        else if (g_workshop_callbacks[i].callback_id == kWorkshopPostNewRoom)
+            ++g_workshop.registered_post_new_room;
+    }
 }
 
 int lua_workshop_add_callback(lua_State* state) {
@@ -57,7 +65,8 @@ int lua_workshop_add_callback(lua_State* state) {
     cb.function_ref = luaL_ref(state, LUA_REGISTRYINDEX);
     cb.disabled = false;
     ++g_workshop_callback_count;
-    g_workshop.registered = static_cast<u32>(g_workshop_callback_count);
+    if (callback_id == kWorkshopPostUpdate) ++g_workshop.registered_post_update;
+    else if (callback_id == kWorkshopPostNewRoom) ++g_workshop.registered_post_new_room;
     return 0;
 }
 
@@ -265,11 +274,12 @@ void workshop_dispatch_post_update(lua_State* state) {
         WorkshopCallback& cb = g_workshop_callbacks[i];
         if (cb.disabled || (cb.callback_id == kWorkshopPostNewRoom && !room_changed)) continue;
         lua_rawgeti(state, LUA_REGISTRYINDEX, cb.function_ref);
-        // PC MC_POST_UPDATE and MC_POST_NEW_ROOM callbacks receive no implicit
-        // mod table. Callback arguments are added only when their event contract
-        // is implemented explicitly.
+        // Workshop mod callbacks are methods on their RegisterMod table.
+        // Specialist's source registers Epic:OnGameUpdate / Epic:OnNewRoom,
+        // whose first parameter is the mod table ("self").
+        lua_rawgeti(state, LUA_REGISTRYINDEX, cb.mod_ref);
         lua_sethook(state, lua_instruction_limit, LUA_MASKCOUNT, kLuaInstructionBudget);
-        const int status = lua_pcall(state, 0, 0, 0);
+        const int status = lua_pcall(state, 1, 0, 0);
         lua_sethook(state, nullptr, 0, 0);
         if (status != 0) {
             const char* error = lua_tostring(state, -1);
