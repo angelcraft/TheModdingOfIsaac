@@ -10,8 +10,10 @@ constexpr size_t kWorkshopMaxMods = 4;
 constexpr size_t kWorkshopMaxCallbacks = 32;
 constexpr size_t kWorkshopMaxMainLua = 64 * 1024;
 constexpr int kWorkshopPostUpdate = 1;
+constexpr int kWorkshopPostNewRoom = 2;
 
 struct WorkshopCallback {
+    int callback_id;
     int mod_ref;
     int function_ref;
     bool disabled;
@@ -24,6 +26,8 @@ struct WorkshopWitness {
 static_assert(sizeof(WorkshopWitness) == 28, "Snapshot Workshop witness layout");
 alignas(8) WorkshopWitness g_workshop = {0x574D4431u, 1u, 0u, 0u, 0u, 0u, 0u};
 bool g_workshop_loading = false;
+uintptr_t g_workshop_room_token = 0;
+bool g_workshop_room_seen = false;
 
 void workshop_release_from(lua_State* state, size_t first) {
     while (g_workshop_callback_count > first) {
@@ -40,11 +44,13 @@ int lua_workshop_add_callback(lua_State* state) {
     if (!lua_istable(state, 1) || !lua_isnumber(state, 2) ||
         !lua_isfunction(state, 3))
         return luaL_error(state, "AddCallback(mod, callback_id, function) required");
-    if (lua_tointeger(state, 2) != kWorkshopPostUpdate)
-        return luaL_error(state, "unsupported PC callback (only MC_POST_UPDATE available)");
+    const int callback_id = static_cast<int>(lua_tointeger(state, 2));
+    if (callback_id != kWorkshopPostUpdate && callback_id != kWorkshopPostNewRoom)
+        return luaL_error(state, "unsupported PC callback (MC_POST_UPDATE or MC_POST_NEW_ROOM available)");
     if (g_workshop_callback_count == kWorkshopMaxCallbacks)
         return luaL_error(state, "Workshop callback limit reached");
     WorkshopCallback& cb = g_workshop_callbacks[g_workshop_callback_count];
+    cb.callback_id = callback_id;
     lua_pushvalue(state, 1);
     cb.mod_ref = luaL_ref(state, LUA_REGISTRYINDEX);
     lua_pushvalue(state, 3);
@@ -72,9 +78,11 @@ int lua_workshop_register_mod(lua_State* state) {
 
 void workshop_register_compat(lua_State* state) {
     lua_register(state, "RegisterMod", lua_workshop_register_mod);
-    lua_createtable(state, 0, 1);
+    lua_createtable(state, 0, 2);
     lua_pushinteger(state, kWorkshopPostUpdate);
     lua_setfield(state, -2, "MC_POST_UPDATE");
+    lua_pushinteger(state, kWorkshopPostNewRoom);
+    lua_setfield(state, -2, "MC_POST_NEW_ROOM");
     lua_setglobal(state, "ModCallbacks");
 }
 
@@ -239,14 +247,29 @@ void workshop_load_manifest(lua_State* state) {
     trace(info);
 }
 
+bool workshop_room_changed() {
+    uintptr_t token = 0;
+    if (!read_current_room_token(token)) {
+        g_workshop_room_seen = false;
+        return false;
+    }
+    const bool changed = !g_workshop_room_seen || g_workshop_room_token != token;
+    g_workshop_room_token = token;
+    g_workshop_room_seen = true;
+    return changed;
+}
+
 void workshop_dispatch_post_update(lua_State* state) {
+    const bool room_changed = workshop_room_changed();
     for (size_t i = 0; i < g_workshop_callback_count; ++i) {
         WorkshopCallback& cb = g_workshop_callbacks[i];
-        if (cb.disabled) continue;
+        if (cb.disabled || (cb.callback_id == kWorkshopPostNewRoom && !room_changed)) continue;
         lua_rawgeti(state, LUA_REGISTRYINDEX, cb.function_ref);
-        lua_rawgeti(state, LUA_REGISTRYINDEX, cb.mod_ref);
+        // PC MC_POST_UPDATE and MC_POST_NEW_ROOM callbacks receive no implicit
+        // mod table. Callback arguments are added only when their event contract
+        // is implemented explicitly.
         lua_sethook(state, lua_instruction_limit, LUA_MASKCOUNT, kLuaInstructionBudget);
-        const int status = lua_pcall(state, 1, 0, 0);
+        const int status = lua_pcall(state, 0, 0, 0);
         lua_sethook(state, nullptr, 0, 0);
         if (status != 0) {
             const char* error = lua_tostring(state, -1);
