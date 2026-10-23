@@ -12,6 +12,8 @@ static const struct { uintptr_t offset; size_t size; u64 fingerprint; } kDanceGu
     {0x678230,0x10,0x0A31A6EE58AEEB8AULL},
     {0xC970,0x1FC,0xCF2D49D95481937BULL},
     {0xCB6C,0x8,0xD3B86355E5FEB39BULL},
+    {0xA1F4,0xF4,0x0FC4A98DB0E415E8ULL}, // ANM2::Play(const char*,bool)
+    {0xA454,0x60,0x1323FD2292CF041FULL}, // ANM2::IsPlaying(const char*)
     {0x2AACCC,0x1410,0x1B502654BCEB5506ULL},
 };
 static const struct { uintptr_t got, target; } kDanceBindings[] = {

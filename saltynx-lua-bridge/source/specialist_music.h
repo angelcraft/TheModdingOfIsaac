@@ -14,7 +14,9 @@ struct SpecialistMusicWitness {
     u32 magic, version, contract, requested, active, starts, restores;
     u32 errors, last_error, track_id, wait_callbacks, attempts;
 };
-alignas(8) SpecialistMusicWitness g_specialist_music={0x534D5531u,1u,0,0,0,0,0,0,0,200,0,0};
+// LoadConfig accepts only explicit IDs 1..118. Slot 19 is absent from the
+// extracted XML; also verify that the live slot is empty before claiming it.
+alignas(8) SpecialistMusicWitness g_specialist_music={0x534D5531u,1u,0,0,0,0,0,0,0,19,0,0};
 bool g_specialist_music_started=false;
 bool g_specialist_music_config_loaded=false;
 bool g_music_contract_checked=false, g_music_contract_verified=false;
@@ -55,15 +57,35 @@ bool libcpp_string_contains(uintptr_t object,const char* needle) {
     return false;
 }
 
-bool specialist_music_configured(uintptr_t music) {
+bool specialist_music_entry(uintptr_t music,uintptr_t& entry) {
     uintptr_t begin=0,end=0;
     if(!readable_range(music,0x3E8) || !game_read(music,0x3D8,begin) ||
        !game_read(music,0x3E0,end) || end<begin || (end-begin)%0x70 ||
        (end-begin)/0x70>1024 || (end-begin)/0x70<=g_specialist_music.track_id) return false;
-    const uintptr_t entry=begin+static_cast<uintptr_t>(g_specialist_music.track_id)*0x70;
-    if(!readable_range(entry,0x70)) return false;
+    entry=begin+static_cast<uintptr_t>(g_specialist_music.track_id)*0x70;
+    return readable_range(entry,0x70);
+}
+
+bool specialist_music_configured(uintptr_t music) {
+    uintptr_t entry=0;
+    if(!specialist_music_entry(music,entry)) return false;
     // This is the path member read by the verified Music::Play implementation.
     return libcpp_string_contains(entry+0x38,"specialist_switch.ogg");
+}
+
+bool libcpp_string_empty(uintptr_t object) {
+    u8 tag=0; u64 length=0;
+    if(!game_read(object,0,tag)) return false;
+    if(!(tag&1)) return (tag>>1)==0;
+    return game_read(object,8,length) && length==0;
+}
+
+bool specialist_music_slot_unused(uintptr_t music) {
+    uintptr_t entry=0,layers=0,layers_end=0;
+    if(!specialist_music_entry(music,entry)) return false;
+    return libcpp_string_empty(entry+8) && libcpp_string_empty(entry+0x20) &&
+           libcpp_string_empty(entry+0x38) && game_read(entry,0x50,layers) &&
+           game_read(entry,0x58,layers_end) && layers==layers_end;
 }
 
 int lua_set_specialist_music(lua_State* state) {
@@ -114,6 +136,10 @@ int lua_set_specialist_music(lua_State* state) {
     }
     if(!specialist_music_configured(music)) {
         if(!g_specialist_music_config_loaded) {
+            if(!specialist_music_slot_unused(music)) {
+                ++g_specialist_music.errors; g_specialist_music.last_error=6;
+                lua_pushnil(state); lua_pushstring(state,"Specialist music slot 19 is occupied"); return 2;
+            }
             using LoadConfigCall=void (*)(void*,const char*,bool);
             reinterpret_cast<LoadConfigCall>(base+0x425218)(
                 reinterpret_cast<void*>(music),"resources/specialist_music.xml",true);
@@ -122,7 +148,7 @@ int lua_set_specialist_music(lua_State* state) {
     }
     if(!specialist_music_configured(music)) {
         ++g_specialist_music.errors; g_specialist_music.last_error=4;
-        lua_pushnil(state); lua_pushstring(state,"music track 200 is not loaded"); return 2;
+        lua_pushnil(state); lua_pushstring(state,"music track 19 is not loaded"); return 2;
     }
     if(current==static_cast<int>(g_specialist_music.track_id)) {
         g_specialist_music.active=1; g_specialist_music_started=true;
@@ -147,4 +173,3 @@ int lua_set_specialist_music(lua_State* state) {
     g_specialist_music.active=0; g_specialist_music.last_error=0;
     lua_pushboolean(state,1); return 1;
 }
-

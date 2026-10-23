@@ -1,4 +1,4 @@
-"""Build local Switch LayeredFS assets for Specialist 0.7.0.
+"""Build local Switch LayeredFS assets for Specialist 0.7.1.
 
 No game assets are uploaded to GitHub. The complete original cache is retained;
 the existing Gnawed Leaf actor/art is not replaced. New Specialist actors use
@@ -14,7 +14,7 @@ ROOT = REPO_ROOT.parents[1] if REPO_ROOT.parent.name == 'work' else REPO_ROOT
 MOD = ROOT/'outputs/specialistforgooditems-switch-prep/resources/the'
 SOURCE = ROOT/'outputs/specialistforgooditems-source/resources/the'
 BASE = ROOT/'inputs/repentance-config'
-DEST = ROOT/'outputs/IsaacLuaBridge-0.7.0-SD/atmosphere/contents/010021C000B6A000/romfs/rp_patch/resources'
+DEST = ROOT/'outputs/IsaacLuaBridge-0.7.1-SD/atmosphere/contents/010021C000B6A000/romfs/rp_patch/resources'
 NAMES = [
  'isaac','magdalene','cain','judas','xxx','eve','samson','azazel','lazarus','eden','lost','lazarus2','dark_judas','lilith','keeper','apollyon','forgor_bone','forgor_soul','bethany','jacob','esau',
  't_isaac','t_magdalene','t_cain','t_judas','t_bluebaby','t_eve','t_samson','t_azazel','t_lazarus','t_eden','t_lost','t_lilith','t_keeper','t_apollyon','t_forgor_bone','t_bethany','t_jacob','t_lazarus2','t_jacob2','t_forgor_soul']
@@ -117,14 +117,14 @@ def main():
     # Load one isolated track at runtime with Music::LoadConfig(preserve=true),
     # so the game's existing base/DLC music table is never replaced.
     music=ET.Element('music',{'root':'music/'})
-    music.append(ET.Element('track',{'id':'200','name':'Specialist Switch','path':'specialist_switch.ogg','loop':'true'}))
+    music.append(ET.Element('track',{'id':'19','name':'Specialist Switch','path':'specialist_switch.ogg','loop':'true'}))
     ET.indent(music); ET.ElementTree(music).write(DEST/'specialist_music.xml',encoding='utf-8',xml_declaration=True)
     ogg=SOURCE/'arcadespecalist.ogg'; data=ogg.read_bytes()
     if not data.startswith(b'OggS') or b'\x01vorbis' not in data[:128]: raise ValueError('Expected the mod Vorbis OGG soundtrack')
     for resource_root in (DEST,):
         out=resource_root/'music/specialist_switch.ogg'; out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(data)
-    manifest={'target_cache_sha256':hashlib.sha256(cache).hexdigest(),'original_actor_records':old_count,'added_actor_records':len(entries),'added_actor_keys':[f'{djb2(f"resources/gfx/characters/specialist_switch/character_{i:02d}.anm2"):08X}' for i in range(len(entries))],'cache_original_bytes_preserved':bytes(updated[4:len(cache)])==cache[4:],'character_types':NAMES,'converted_sheets':sheet_records,'music_id':200,'music_registration':'runtime Music::LoadConfig with preserve=true; original music table is not replaced','music_sha256':hashlib.sha256(data).hexdigest(),'music_format':'Ogg Vorbis','gnawed_leaf_art':'original restored; only priority/isFlying metadata retained for null costume 4','device_status':'requires Switch verification'}
-    (ROOT/'outputs/IsaacLuaBridge-0.7.0-SD/ASSET-BUILD.json').write_text(json.dumps(manifest,indent=2)+'\n')
-    print(f'Built {len(entries)} Specialist cache actors, {len(sheet_records)} lossless PCX sheets, isolated music id 200.')
+    manifest={'target_cache_sha256':hashlib.sha256(cache).hexdigest(),'original_actor_records':old_count,'added_actor_records':len(entries),'added_actor_keys':[f'{djb2(f"resources/gfx/characters/specialist_switch/character_{i:02d}.anm2"):08X}' for i in range(len(entries))],'cache_original_bytes_preserved':bytes(updated[4:len(cache)])==cache[4:],'character_types':NAMES,'converted_sheets':sheet_records,'music_id':19,'music_registration':'runtime Music::LoadConfig with preserve=true; live slot 19 must be empty before registration','music_sha256':hashlib.sha256(data).hexdigest(),'music_format':'Ogg Vorbis','gnawed_leaf_art':'original restored; only priority/isFlying metadata retained for null costume 4','device_status':'requires Switch verification'}
+    (ROOT/'outputs/IsaacLuaBridge-0.7.1-SD/ASSET-BUILD.json').write_text(json.dumps(manifest,indent=2)+'\n')
+    print(f'Built {len(entries)} Specialist cache actors, {len(sheet_records)} lossless PCX sheets, guarded music id 19.')
 
 if __name__=='__main__': main()

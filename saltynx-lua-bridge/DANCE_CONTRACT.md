@@ -1,3 +1,18 @@
+## 0.7.1 correction after the failed 0.7.0 device test
+
+The user observed a headless body and no music. Exact-build assembly shows
+Load resets both animation states. The new reload sequence explicitly calls
+ANM2::Play(const char*,bool) at 0xA1F4 and verifies IsPlaying at 0xA454. These
+functions have full-symbol-size FNV guards. If playback is not established,
+the bridge removes its costume and reports error 15 instead of leaving a
+hidden head. This is not yet device-confirmed.
+
+Music::LoadConfig's explicit-ID branch at 0x4260D4..0x4260E4 accepts IDs 1..118;
+ID 200 was discarded. Use slot 19 only if its live name, intro, main path and
+layer vector are empty. Otherwise report error 6 without overriding any track.
+The static XML omits 19, but only the live occupancy check permits registration.
+The existing music table is retained. Playback/restoration still need testing.
+
 # Specialist 0.7.0 candidate and 0.6.0 device baseline
 
 Stable 0.5.0 remains at `stable/isaacluabridge-0.5.0` / e9b20cc807047c4307d2bcf4cdcbb59310516508.
@@ -63,9 +78,9 @@ repository and Actions artifacts contain no game asset cache.
 without replacing existing actors. It serializes the provided character ANM2s
 and converts their source PNGs to four-plane PCX, independently decoding each
 conversion and checking every RGBA pixel. It also prepares an isolated Ogg
-Vorbis Specialist track as music ID 200; the native code verifies the loaded
+Vorbis Specialist track as music ID 19; the native code verifies the loaded
 music-table path before calling `Music::Play`, and calls `Room::PlayMusic` when
-the condition ends. Track 200 is registered from a separate
+the condition ends. Track 19 is registered from a separate
 `specialist_music.xml` via the verified `Music::LoadConfig(path,true)` path;
 the true flag preserves existing base and DLC music entries.
 
@@ -76,5 +91,7 @@ tracks still require device confirmation. Snapshot 0.7.0 reports contract,
 requests, additions, removals and music starts/restores/failures; those counters
 do not prove audible or visual success.
 
-Rollback: restore the preserved 0.5.0 ELF/Lua and remove only the four files
-listed in the local installer manifest, restoring prior files from its backup.
+Rollback: restore the seven runtime files from the pre-0.7.0 SD backup after
+checking BEFORE.json hashes. Leave current diagnostic logs intact. New isolated
+Specialist assets may remain unreferenced by the restored 0.6.0 runtime; no
+recursive deletion is needed.

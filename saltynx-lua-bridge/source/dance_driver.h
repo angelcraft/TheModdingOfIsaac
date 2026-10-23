@@ -145,6 +145,20 @@ int lua_set_specialist_dance(lua_State* state) {
         using GraphicsCall=void (*)(void*);
         reinterpret_cast<LoadCall>(base+0xC970)(reinterpret_cast<void*>(costume_entry),&path,false);
         reinterpret_cast<GraphicsCall>(base+0xCB6C)(reinterpret_cast<void*>(costume_entry));
+        // Load resets both AnimationState objects. The original AddNullCostume
+        // initialization ran before this reload, so explicitly start the dance.
+        using PlayCall=void (*)(void*,const char*,bool);
+        using IsPlayingCall=bool (*)(const void*,const char*);
+        reinterpret_cast<PlayCall>(base+0xA1F4)(reinterpret_cast<void*>(costume_entry),"HeadDown",true);
+        if(!reinterpret_cast<IsPlayingCall>(base+0xA454)(reinterpret_cast<const void*>(costume_entry),"HeadDown")) {
+            // A missing/invalid actor must not leave the player's head hidden.
+            reinterpret_cast<CostumeCall>(base+0x2F2170)(reinterpret_cast<void*>(player),4);
+            g_dance_owner=0; g_dance_asset_type=-1; g_dance.active=0;
+            bool leftover=false; uintptr_t ignored=0;
+            if(!costume_present(player,item,leftover,ignored) || leftover)
+                return dance_error(state,11,"failed dance cleanup was not observed");
+            return dance_error(state,15,"Specialist HeadDown animation did not start");
+        }
         g_dance_owner=player; g_dance_asset_type=static_cast<int>(player_type); ++g_dance.additions;
     } else if(!desired && g_dance_owner==player && present) {
         reinterpret_cast<CostumeCall>(base+0x2F2170)(reinterpret_cast<void*>(player),4);

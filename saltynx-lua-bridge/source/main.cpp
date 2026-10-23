@@ -429,7 +429,7 @@ int main(int, char**) {
 
     g_startup_log = SaltySDCore_fopen(
         "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-startup.log", "wb");
-    trace("IsaacLuaBridge 0.7.0: Specialist quality, character and music candidate");
+    trace("IsaacLuaBridge 0.7.1: explicit dance playback and guarded music slot 19");
     if (!prepare_lua()) {
         if (g_startup_log) SaltySDCore_fclose(g_startup_log);
         g_startup_log = nullptr;
