@@ -131,6 +131,7 @@ void lua_instruction_limit(lua_State* state, lua_Debug*) {
 
 #include "workshop_loader.h"
 #include "item_config.h"
+#include "vector_api.h"
 
 // These values describe our verified update callback, not Isaac entities.
 int lua_get_frame_count(lua_State* state) {
@@ -173,6 +174,7 @@ void register_bridge_api(lua_State* state) {
     lua_setfield(state, -2, "SetSpecialistMusic");
     lua_setglobal(state, "IsaacBridge");
     register_item_config_api(state);
+    register_vector_api(state);
 }
 
 bool read_script(char** output, size_t* output_size) {
