@@ -105,6 +105,29 @@ bool workshop_valid_id(const char* id, size_t len) {
     return true;
 }
 
+// Give each mod private copies of mutable global tables. The values are
+// still the same Lua functions, but table mutations in one mod do not leak to
+// later mods through shared standard-library/API tables.
+void workshop_copy_env_value(lua_State* state, int environment_index, const char* name) {
+    lua_getglobal(state, name);
+    if (!lua_istable(state, -1)) {
+        lua_setfield(state, environment_index, name);
+        return;
+    }
+    lua_newtable(state);
+    const int source_index = lua_gettop(state) - 1;
+    const int copy_index = lua_gettop(state);
+    lua_pushnil(state);
+    while (lua_next(state, source_index)) {
+        lua_pushvalue(state, -2);
+        lua_pushvalue(state, -2);
+        lua_settable(state, copy_index);
+        lua_pop(state, 1);
+    }
+    lua_setfield(state, environment_index, name);
+    lua_pop(state, 1);
+}
+
 void workshop_load_mod(lua_State* state, const char* id) {
     char path[180] = {};
     const int n = std::snprintf(
@@ -154,16 +177,15 @@ void workshop_load_mod(lua_State* state, const char* id) {
         lua_newtable(state); // [chunk, env]
         lua_pushvalue(state, -1);
         lua_setfield(state, -2, "_G");
+        const int environment_index = lua_gettop(state);
         const char* allowed[] = {
             "_VERSION", "assert", "error", "ipairs", "pairs", "next", "type",
             "tonumber", "tostring", "select", "unpack", "pcall", "xpcall",
             "math", "string", "table", "coroutine",
             "log", "RegisterMod", "ModCallbacks", "IsaacBridge"
         };
-        for (size_t i = 0; i < sizeof(allowed)/sizeof(allowed[0]); ++i) {
-            lua_getglobal(state, allowed[i]);
-            lua_setfield(state, -2, allowed[i]);
-        }
+        for (size_t i = 0; i < sizeof(allowed)/sizeof(allowed[0]); ++i)
+            workshop_copy_env_value(state, environment_index, allowed[i]);
         lua_setfenv(state, -2); // pops env
         g_workshop_loading = true;
         lua_sethook(state, lua_instruction_limit, LUA_MASKCOUNT, kLuaInstructionBudget);
