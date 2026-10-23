@@ -13,6 +13,8 @@
 
 ## Install optional smoke test
 
+For the partial ItemConfig API, copy your own extracted `resources/items_metadata.xml` to `sd:/switch/TheModdingOfIsaac/items_metadata.xml`. The XML is read at plugin startup; if it is missing or invalid, `GetCollectible(id)` returns `nil`. This metadata file is intentionally not included in the repository or build artifact.
+
 Install the experimental artifact ELF at:
 
     sd:/SaltySD/plugins/010021C000B6A000/IsaacLuaBridge.elf
@@ -58,7 +60,7 @@ The original declares handlers with colon syntax, such as `function Epic:OnGameU
 | `Isaac.FindInRadius(Vector(...), radius, EntityPartition.PICKUP)` | Enumerate pickups in the room | Unsupported; the current custom pedestal reader is not the PC entity-enumeration API |
 | Entity `Variant`, `SubType`, `Position` | Filter collectible pedestals and test alt-path visibility | Unsupported as PC-compatible entity objects |
 | `PickupVariant.PICKUP_COLLECTIBLE`, `EntityPartition.PICKUP` | Pickup filtering and search mask | Unsupported |
-| `Isaac.GetItemConfig():GetCollectible(id)`, item `Name` and `Quality` | Quality threshold and saved per-item overrides | Unsupported |
+| `Isaac.GetItemConfig():GetCollectible(id).Quality` | Quality threshold and saved per-item overrides | Partial: reads exact `items_metadata.xml` qualities; `Name` is not exposed until a localization source is verified |
 | `CollectibleType.NUM_COLLECTIBLES` | Bound a config scan | Unsupported |
 | `Isaac.GetCostumeIdByPath(path)` | Resolve the character/item `.anm2` costume | Unsupported; LayeredFS asset installation is a separate requirement |
 | `Isaac.GetMusicIdByName(name)` | Resolve base and character-specific songs | Unsupported |
@@ -72,7 +74,7 @@ The source also uses standard Lua libraries (`pairs`, `ipairs`, `table.insert`, 
 
 ### What the bridge actually exposes
 
-The prototype implements `RegisterMod`, `mod:AddCallback`, the two callback constants above, Lua 5.1 base libraries, and a custom `IsaacBridge` table. Its `GetRoomCollectibles`, `SetSpecialistDance`, and `SetSpecialistMusic` functions are project-specific helpers, not substitutes for the PC `Game`, `Isaac`, `EntityPlayer`, config, or `MusicManager` APIs. In Workshop mode the legacy Specialist script's `on_update` is skipped while any Workshop callback is registered, so the PC `main.lua` is not currently running alongside those helpers.
+The prototype implements `RegisterMod`, `mod:AddCallback`, the two callback constants above, Lua 5.1 base libraries, a partial `Isaac.GetItemConfig():GetCollectible(id)` (fields `ID` and `Quality` only), and a custom `IsaacBridge` table. Its `GetRoomCollectibles`, `SetSpecialistDance`, and `SetSpecialistMusic` functions are project-specific helpers, not substitutes for the PC `Game`, `Isaac`, `EntityPlayer`, config, or `MusicManager` APIs. In Workshop mode the legacy Specialist script's `on_update` is skipped while any Workshop callback is registered, so the PC `main.lua` is not currently running alongside those helpers.
 
 Do not invoke all callback IDs with fabricated parameters. That would only exercise our dispatcher and could call handlers in invalid game states. Add events one at a time, then count their natural trigger on-device and validate callback arguments against the PC API contract. Keep unsupported IDs unavailable until both trigger and argument behavior are known.
 
@@ -82,9 +84,10 @@ Do not invoke all callback IDs with fabricated parameters. That would only exerc
 - mod:AddCallback(ModCallbacks.MC_POST_UPDATE, fn)
 - mod:AddCallback(ModCallbacks.MC_POST_NEW_ROOM, fn) (candidate room-transition signal; not yet confirmed on hardware)
 - Basic Lua 5.1 functions and math/string/table/coroutine libraries.
+- `Isaac.GetItemConfig():GetCollectible(id)` with exact `ID` and `Quality` loaded from `sd:/switch/TheModdingOfIsaac/items_metadata.xml`; absent/unknown entries return `nil`, and localized names are not fabricated.
 - Existing IsaacBridge functions still exist, but they are NOT PC Isaac functions.
 
-Unsupported: Game(), Isaac.GetRoomEntities, MusicManager(), Isaac.GetCostumeIdByPath, MC_POST_NEW_LEVEL, MC_POST_PICKUP_INIT, MC_POST_PLAYER_UPDATE, MC_USE_ITEM, MC_USE_CARD, MC_POST_GAME_STARTED, MC_PRE_GAME_EXIT, require, file IO, save data, other callbacks, automatic resource merging and rendering/music imports.
+Unsupported: Game(), Isaac.GetRoomEntities, `Isaac.GetItemConfig().GetCollectible(id).Name`, MusicManager(), Isaac.GetCostumeIdByPath, MC_POST_NEW_LEVEL, MC_POST_PICKUP_INIT, MC_POST_PLAYER_UPDATE, MC_USE_ITEM, MC_USE_CARD, MC_POST_GAME_STARTED, MC_PRE_GAME_EXIT, require, file IO, save data, other callbacks, automatic resource merging and rendering/music imports.
 The original PC Specialist main.lua therefore cannot run unmodified. This is deliberately a small loader proof of concept; no claims about native music or animation compatibility.
 
 ## Catalog calls from the original NRO

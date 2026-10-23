@@ -11,6 +11,7 @@ table.__tmi_isolation_probe = "demo"
 coroutine.__tmi_isolation_probe = "demo"
 ModCallbacks.MC_POST_UPDATE = 999
 IsaacBridge.__tmi_isolation_probe = "demo"
+Isaac.__tmi_isolation_probe = "demo"
 workshop_global_probe = "demo"
 
 local function post_update(self)

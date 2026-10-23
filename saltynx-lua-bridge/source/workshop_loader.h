@@ -182,7 +182,7 @@ void workshop_load_mod(lua_State* state, const char* id) {
             "_VERSION", "assert", "error", "ipairs", "pairs", "next", "type",
             "tonumber", "tostring", "select", "unpack", "pcall", "xpcall",
             "math", "string", "table", "coroutine",
-            "log", "RegisterMod", "ModCallbacks", "IsaacBridge"
+            "log", "RegisterMod", "ModCallbacks", "IsaacBridge", "Isaac"
         };
         for (size_t i = 0; i < sizeof(allowed)/sizeof(allowed[0]); ++i)
             workshop_copy_env_value(state, environment_index, allowed[i]);

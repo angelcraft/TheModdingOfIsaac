@@ -66,6 +66,7 @@ static int SaltySDCore_fclose(FILE* file) {
 }
 
 #include "../source/workshop_loader.h"
+#include "../source/item_config.h"
 
 static bool has_trace(const char* expected) {
     for (const auto& line : g_trace)
@@ -90,6 +91,18 @@ int main(int argc, char** argv) {
     lua_newtable(state);
     lua_setglobal(state, "IsaacBridge");
     workshop_register_compat(state);
+    register_item_config_api(state);
+    if (luaL_dostring(state,
+        "local c = Isaac.GetItemConfig(); "
+        "local hi = c:GetCollectible(4); "
+        "assert(hi and hi.ID == 4 and hi.Quality == 4); "
+        "local lo = Isaac.GetItemConfig().GetCollectible(502); "
+        "assert(lo and lo.Quality == 1); "
+        "assert(c:GetCollectible(999) == nil)") != 0) {
+        std::cerr << "ItemConfig metadata/API mismatch: " << lua_tostring(state, -1) << '\n';
+        lua_close(state);
+        return 1;
+    }
 
     workshop_load_manifest(state);
     if (g_workshop.loaded != 2 || g_workshop.errors != 0 ||

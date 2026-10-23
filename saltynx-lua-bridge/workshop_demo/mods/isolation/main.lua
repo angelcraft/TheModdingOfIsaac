@@ -13,6 +13,7 @@ expect("table library", table.__tmi_isolation_probe == nil)
 expect("coroutine library", coroutine.__tmi_isolation_probe == nil)
 expect("ModCallbacks table", ModCallbacks.MC_POST_UPDATE == 1)
 expect("IsaacBridge table", IsaacBridge.__tmi_isolation_probe == nil)
+expect("Isaac API table", Isaac.__tmi_isolation_probe == nil)
 
 if #failures == 0 then
     log("Workshop isolation: PASS (globals, libraries, API tables)")
