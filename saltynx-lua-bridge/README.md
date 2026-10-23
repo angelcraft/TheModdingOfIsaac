@@ -1,7 +1,7 @@
 # IsaacLuaBridge 0.8.0 — experimental Workshop Lua loader
 
 This isolated feature branch adds optional SD-based PC-style Lua mod loading:
-`RegisterMod` + `MC_POST_UPDATE` only. The current, previously verified
+`RegisterMod` + `MC_POST_UPDATE` + `MC_POST_NEW_ROOM` only. Room transitions are detected from the already verified current-room pointer; no new native call or memory write is used. The current, previously verified
 specialized Specialist bridge.lua is preserved but its per-frame callback is paused
 when at least one Workshop callback is enabled, preventing two dance/music
 implementations from running together.
