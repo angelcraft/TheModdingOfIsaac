@@ -45,6 +45,14 @@ The 2026-10-23 device logs show 3,448 Workshop callback successes, zero callback
 
 Three mods require a local or built-in `json` module; three refer to `scripts.modconfig`, a dependency not found as a local module in those packages. The loader's local dotted `require` does not provide built-in modules automatically. The target environment now exposes `REPENTANCE=true`, and module path validation accepts safe `+` filename characters used by conditional AB+ / Repentance packages.
 
+## PC API semantics to preserve during porting
+
+The Isaac Lua reference documents `Isaac.GetPlayer(playerID)` with player IDs starting at 0 and shows iteration from 0 through `GetNumPlayers() - 1`. Its `Game:GetPlayer(index)` entry also warns that unused indices may return the last player. See the [Repentance Lua API reference](https://wofsauge.github.io/IsaacDocs/rep/Isaac.html#getplayer) and [Game reference](https://wofsauge.github.io/IsaacDocs/rep/Game.html#get-player).
+
+The locally supplied Specialist source instead loops `playerNum = 1, game:GetNumPlayers()` before calling `game:GetPlayer(playerNum)`. That can skip player ID 0 and revisit the last player in co-op. The mod source remains local; this report records only the compatibility finding. The bridge has no `Game` or player wrapper yet. Preserve PC's zero-based IDs in any future implementation, then decide whether to add a narrow, documented source fix for Specialist.
+
+These are PC API semantics from community-maintained documentation, not proof that our Switch wrapper has been implemented or verified. Validate the exact target behavior before exposing the wrapper.
+
 ## What this changes about prioritization
 
 The next reusable API foundation should be real `Game`, `Room`, `Level`, and `Player` wrappers plus lifecycle callbacks, with verified state and arguments. Those features cover the most repeated needs in this corpus and the original Specialist mod. Pickup enumeration, costumes, music, save data, and JSON follow as separate verified capabilities.
