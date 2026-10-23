@@ -6,7 +6,7 @@
 
 - SaltyNX/SaltySD injects IsaacLuaBridge ELF and hosts Lua 5.1 in the exact verified Switch Repentance NRO.
 - The plugin reads mods.txt plus up to four main.lua files during plugin startup, while SaltySD file IPC is available; no file IPC is used in the game's update callback.
-- The working IsaacUpdate hook invokes registered Workshop MC_POST_UPDATE handlers on the game update thread. If at least one Workshop callback is registered, it temporarily skips the old Specialist on_update logic to keep the smoke test isolated. Without mod callbacks, legacy behavior is unchanged.
+- The working IsaacUpdate hook invokes registered Workshop MC_POST_UPDATE handlers on the game update thread. MC_POST_NEW_ROOM is emitted once on the first valid room and when the already verified room pointer changes; no new native call or memory write is used. If at least one Workshop callback is registered, it temporarily skips the old Specialist on_update logic to keep the smoke test isolated. Without mod callbacks, legacy behavior is unchanged.
 - A small per-mod global namespace omits io/os/package/debug, but this does NOT establish secure sandboxing: only use mods you trust.
 - The read-only IsaacModuleSnapshot 0.8.0 reads Workshop counts via a versioned witness address written to bridge-startup.log.
 - Audio, animation and sprite assets use Atmosphere LayeredFS. PC Workshop assets are NOT automatically converted or registered by this build.
@@ -33,6 +33,7 @@ To disable the demo, rename mods.txt; to return fully to a known installation, r
 
 - RegisterMod(name, 1)
 - mod:AddCallback(ModCallbacks.MC_POST_UPDATE, fn)
+- mod:AddCallback(ModCallbacks.MC_POST_NEW_ROOM, fn)
 - Basic Lua 5.1 functions and math/string/table/coroutine libraries.
 - Existing IsaacBridge functions still exist, but they are NOT PC Isaac functions.
 
