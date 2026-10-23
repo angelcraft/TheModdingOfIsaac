@@ -104,7 +104,7 @@ int main(int argc, char** argv) {
         "local d = Vector.FromAngle(90); assert(math.abs(d.X) < 0.00001 and math.abs(d.Y - 1) < 0.00001); "
         "v.X = 6; assert(v.X == 6); "
         "local r = Vector(1, 0):Rotated(90); assert(math.abs(r.X) < 0.00001 and math.abs(r.Y - 1) < 0.00001)") != 0) {
-        std::cerr << "Vector API behavior mismatch: " << lua_tostring(state, -1) << '\\n';
+        std::cerr << "Vector API behavior mismatch: " << lua_tostring(state, -1) << '\n';
         lua_close(state);
         return 1;
     }
@@ -114,14 +114,14 @@ int main(int argc, char** argv) {
     if (luaL_loadstring(state,
         "local v = Vector(3, 4); assert(v:Length() == 5); "
         "assert(Vector.FromAngle(0).X == 1)") != 0) {
-        std::cerr << "could not compile isolated Vector check: " << lua_tostring(state, -1) << '\\n';
+        std::cerr << "could not compile isolated Vector check: " << lua_tostring(state, -1) << '\n';
         lua_close(state);
         return 1;
     }
     lua_pushvalue(state, vector_env);
     lua_setfenv(state, -2);
     if (lua_pcall(state, 0, 0, 0) != 0) {
-        std::cerr << "isolated Vector API mismatch: " << lua_tostring(state, -1) << '\\n';
+        std::cerr << "isolated Vector API mismatch: " << lua_tostring(state, -1) << '\n';
         lua_close(state);
         return 1;
     }
