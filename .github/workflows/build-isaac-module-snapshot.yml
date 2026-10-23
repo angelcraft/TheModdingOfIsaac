@@ -31,12 +31,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 -m py_compile isaac-module-snapshot/tools/nro_plt.py isaac-module-snapshot/tools/catalog_nro_calls.py
+          python3 -m unittest discover -s isaac-module-snapshot/tools -p 'test_*.py' -v
           make -C isaac-module-snapshot -j2
           mkdir -p dist/switch/TheModdingOfIsaac
           cp isaac-module-snapshot/IsaacModuleSnapshot.nro dist/switch/TheModdingOfIsaac/
           cp isaac-module-snapshot/README.md dist/README.md
           cp isaac-module-snapshot/COPYING dist/COPYING
-          printf 'version=0.7.0\nsource_repository=https://github.com/angelcraft/TheModdingOfIsaac\nsource_commit=%s\n' "$SOURCE_COMMIT" > dist/BUILD.txt
+          printf 'version=0.8.0\nsource_repository=https://github.com/angelcraft/TheModdingOfIsaac\nsource_commit=%s\n' "$SOURCE_COMMIT" > dist/BUILD.txt
           cd dist
           sha256sum switch/TheModdingOfIsaac/IsaacModuleSnapshot.nro > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
