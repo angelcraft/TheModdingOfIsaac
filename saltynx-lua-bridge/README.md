@@ -1,30 +1,43 @@
-# Isaac Lua frame bridge 0.3.0
+# IsaacLuaBridge 0.7.1 — Specialist correction candidate
 
-This is the first guarded in-game callback experiment for the exact verified
-Nintendo Switch Repentance build. A small worker waits for the late Repentance
-NRO, validates it, verifies the writable GOT still targets the original
-`IsaacUpdate`, and replaces only that slot. On first invocation it derives the ASLR base from the verified
-caller, checks the executable mapping, NRO Build ID, complete 36-byte original
-function and call boundary, then calls the untouched original function directly.
+Resource correction after the second failed Switch test: cache actor base paths
+must end in `/.`, matching the original cache. GetAbsolutePathFromBasePath splits
+the base with getline and removes its final component. A trailing slash has no
+final empty token, so the old base lost specialist_switch and looked for sheets
+in the parent directory. The resource builder now preserves the folder with the
+dot sentinel. This changes only animations.b; native ELF and PCX sheets are
+unchanged. The separate resource-fix package still needs Switch confirmation.
 
-After the original returns, it invokes `on_update(frame)` in a persistent Lua
-5.1 state. This build limits Lua dispatch to three calls. It exposes no Isaac
-gameplay API and is not yet the playable Specialist mod.
+The user confirmed the 0.6.0 dance, then reported that 0.7.0 displayed a small
+headless body and played no Specialist music. This candidate corrects two
+specific faults found in the exact-build code:
 
-Install both `IsaacLuaBridge.elf` and `bridge.lua` in:
+- ANM2::Load resets the animation states. After loading the actor, explicitly
+  Play("HeadDown", true) and verify IsPlaying("HeadDown"). On failure, remove the
+  bridge-owned costume so its hidden-head effect is not left on the player.
+  Both native calls have full-function drift guards.
+- Music::LoadConfig accepts explicit IDs 1–118, rejecting the old ID 200.
+  Register ID 19 only if its live name, intro, main path and layers are empty.
+  If occupied, preserve it and report an error. LoadConfig(preserve=true)
+  preserves the remaining game music entries.
 
-`SaltySD/plugins/010021C000B6A000/`
+The Lua rule selects quality-4 uncollected room pedestals using this build's
+40 metadata IDs, plus the intentional item 502 test exception. There are 41
+character asset mappings, with a one-player-entity limit; paired characters
+and co-op remain unfinished.
 
-Remove or rename the previous `IsaacLuaBridge.elf` first. Keep the previous ELF
-as a backup outside that folder. On startup, `bridge-startup.log` should say the
-Lua state is ready and the late import replacement was registered. Runtime
-success is also emitted through `svcOutputDebugString` as
-`first in-game Lua callback completed`. The first successful callback also
-writes `bridge-runtime.log` beside the ELF. Its expected result is
-`contract=verified`, `original_isaac_update=called`, and
-`lua_on_update=success`.
+The 0.7.1 code and assets still need Switch confirmation. Actions builds the
+ELF and Lua. Keep the read-only Snapshot 0.7.0; witness layouts are unchanged.
+Run `saltynx-lua-bridge/tools/build_specialist_070_assets.py`
+from the project root to build the LayeredFS files from the user's existing
+game dump and Workshop assets; those original assets are not stored in GitHub.
 
-This build is specific to Repentance NRO Build ID
-`91C73FDD575061318D68886316AFEAC72388B2AB`. It contains no game binary and no
-inline patch or displaced instruction trampoline.
+The package restores stock Gnawed Leaf artwork and adds the Specialist cache
+actors/sheets plus one soundtrack. Validate first with normal Isaac, one player,
+the known 502 pedestal, a quality-4 pedestal, and a non-Isaac character. Confirm
+the dance starts on room entry, stops after leaving or pickup, music follows
+and restores, and quality 0–3 items other than 502 do not trigger it. The 0.6.0 build and
+pre-change SD backup remain available for rollback.
 
+See `DANCE_CONTRACT.md` for the exact-build guards, asset conversion, test
+limits, and rollback details.

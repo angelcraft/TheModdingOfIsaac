@@ -20,6 +20,7 @@
 
 #define EXPECTED_TITLE_ID UINT64_C(0x010021C000B6A000)
 #define LOG_PATH "sdmc:/switch/TheModdingOfIsaac/module-snapshot.log"
+#define BRIDGE_STARTUP_PATH "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-startup.log"
 #define CHEAT_PATH "sdmc:/atmosphere/contents/010021c000b6a000/cheats/b6e5bdb9dc12e1d1.txt"
 #define MAX_MAPPINGS 4096
 #define MAPPING_BATCH 32
@@ -53,6 +54,14 @@ static Service g_cheat_service;
 static bool g_cheat_open, g_pm_dmnt_open, g_pm_info_open, g_ldr_open;
 static size_t g_verified_repentance;
 static u64 g_loader_run_pointer;
+static u64 g_bridge_stage_address;
+static u64 g_bridge_hook_address;
+static u64 g_bridge_runtime_address;
+static u64 g_bridge_pedestal_address;
+static u64 g_bridge_dance_address;
+static u64 g_bridge_music_address;
+static bool g_bridge_hook_observed;
+static bool g_unexpected_bindings;
 
 static void log_line(const char *format, ...) {
     if (!g_log) return;
@@ -81,6 +90,202 @@ static void log_build_id(const char *label, const u8 id[0x20]) {
     for (size_t i = 0; i < 0x20; ++i)
         snprintf(hex + i * 2, sizeof(hex) - i * 2, "%02X", id[i]);
     log_line("%s=%s", label, hex);
+}
+
+/* Read only the two marker addresses that our own SaltyNX plugin wrote during
+ * startup; do not perform file IPC from an injected update callback. */
+static void load_bridge_marker(void) {
+    FILE *file = fopen(BRIDGE_STARTUP_PATH, "rb");
+    if (!file) {
+        log_line("bridge_marker=unavailable (no startup log)");
+        return;
+    }
+    char line[192];
+    while (fgets(line, sizeof(line), file)) {
+        uint64_t parsed = 0;
+        if (sscanf(line, "bridge_stage_address=0x%" SCNx64, &parsed) == 1)
+            g_bridge_stage_address = parsed;
+        else if (sscanf(line, "bridge_hook_address=0x%" SCNx64, &parsed) == 1)
+            g_bridge_hook_address = parsed;
+        else if (sscanf(line, "bridge_runtime_address=0x%" SCNx64, &parsed) == 1)
+            g_bridge_runtime_address = parsed;
+        else if (sscanf(line, "bridge_pedestal_address=0x%" SCNx64, &parsed) == 1)
+            g_bridge_pedestal_address = parsed;
+        else if (sscanf(line, "bridge_dance_address=0x%" SCNx64, &parsed) == 1)
+            g_bridge_dance_address = parsed;
+        else if (sscanf(line, "bridge_music_address=0x%" SCNx64, &parsed) == 1)
+            g_bridge_music_address = parsed;
+    }
+    fclose(file);
+    log_line("bridge_marker=%s", (g_bridge_stage_address && g_bridge_hook_address)
+             ? "present" : "incomplete");
+}
+
+// Declared here because the observation helpers follow the service wrappers.
+static Result cheat_read(u64 address, void *out, size_t size);
+static Result cheat_query(MemoryInfo *out, u64 address);
+
+static void report_runtime_counters(void) {
+    if (!g_bridge_runtime_address) {
+        log_line("bridge_continuous=unknown (runtime marker unavailable)");
+        return;
+    }
+    struct { u32 magic, version, attempted, succeeded, failed; } witness = {0};
+    _Static_assert(sizeof(witness) == 20, "Runtime witness layout");
+    MemoryInfo mapping = {0};
+    Result rc = cheat_query(&mapping, g_bridge_runtime_address);
+    if (R_FAILED(rc) || !(mapping.perm & Perm_R) ||
+        mapping.addr > g_bridge_runtime_address ||
+        g_bridge_runtime_address - mapping.addr > mapping.size ||
+        sizeof(witness) > mapping.size - (g_bridge_runtime_address - mapping.addr)) {
+        log_line("bridge_continuous=unknown (runtime memory inaccessible)");
+        return;
+    }
+    rc = cheat_read(g_bridge_runtime_address, &witness, sizeof(witness));
+    if (R_FAILED(rc) || witness.magic != 0x494C4234u || witness.version != 1u) {
+        log_line("bridge_continuous=unknown (runtime signature mismatch)");
+        return;
+    }
+    log_line("bridge_callback_attempted=%" PRIu32 " succeeded=%" PRIu32 " failed=%" PRIu32,
+             witness.attempted, witness.succeeded, witness.failed);
+    if (g_bridge_hook_observed && witness.succeeded > 3 && witness.failed == 0) {
+        log_line("bridge_continuous=OBSERVED (more than three successful callbacks)");
+        printf("Continuous Lua: %" PRIu32 " successful callbacks.\n", witness.succeeded);
+    } else {
+        log_line("bridge_continuous=NOT_CONFIRMED");
+    }
+}
+
+static void report_dance_state(void) {
+    if (!g_bridge_dance_address) return;
+    struct { u32 magic, version, contract, requested, active, additions;
+             u32 removals, failures, conflicts, last_error, target_id, reserved; } d = {0};
+    _Static_assert(sizeof(d) == 48, "Dance witness layout");
+    MemoryInfo m = {0};
+    Result rc = cheat_query(&m, g_bridge_dance_address);
+    if (R_FAILED(rc) || !(m.perm & Perm_R) || m.addr > g_bridge_dance_address ||
+        g_bridge_dance_address-m.addr > m.size ||
+        sizeof(d) > m.size-(g_bridge_dance_address-m.addr)) {
+        log_line("bridge_dance=unknown (witness inaccessible)"); return;
+    }
+    rc = cheat_read(g_bridge_dance_address, &d, sizeof(d));
+    if (R_FAILED(rc) || d.magic != 0x44414E31u || d.version != 1) {
+        log_line("bridge_dance=unknown (signature mismatch)"); return;
+    }
+    log_line("bridge_dance_contract=%" PRIu32 " requested=%" PRIu32 " active=%" PRIu32 " target_id=%" PRIu32,
+             d.contract,d.requested,d.active,d.target_id);
+    log_line("bridge_dance_additions=%" PRIu32 " removals=%" PRIu32 " failures=%" PRIu32 " conflicts=%" PRIu32 " last_error=%" PRIu32,
+             d.additions,d.removals,d.failures,d.conflicts,d.last_error);
+    log_line("bridge_dance_visual=DEVICE_OBSERVATION_REQUIRED");
+}
+
+static void report_specialist_music(void) {
+    if (!g_bridge_music_address) return;
+    struct { u32 magic, version, contract, requested, active, starts;
+             u32 restores, errors, last_error, track_id, wait_callbacks, attempts; } mstate = {0};
+    _Static_assert(sizeof(mstate) == 48, "Specialist music witness layout");
+    MemoryInfo m = {0};
+    Result rc = cheat_query(&m, g_bridge_music_address);
+    if (R_FAILED(rc) || !(m.perm & Perm_R) || m.addr > g_bridge_music_address ||
+        g_bridge_music_address-m.addr > m.size ||
+        sizeof(mstate) > m.size-(g_bridge_music_address-m.addr)) {
+        log_line("bridge_specialist_music=unknown (witness inaccessible)"); return;
+    }
+    rc = cheat_read(g_bridge_music_address, &mstate, sizeof(mstate));
+    if (R_FAILED(rc) || mstate.magic != 0x534D5531u || mstate.version != 1) {
+        log_line("bridge_specialist_music=unknown (signature mismatch)"); return;
+    }
+    log_line("bridge_specialist_music_contract=%" PRIu32 " requested=%" PRIu32
+             " active=%" PRIu32 " track_id=%" PRIu32,
+             mstate.contract,mstate.requested,mstate.active,mstate.track_id);
+    log_line("bridge_specialist_music_starts=%" PRIu32 " restores=%" PRIu32
+             " errors=%" PRIu32 " last_error=%" PRIu32,
+             mstate.starts,mstate.restores,mstate.errors,mstate.last_error);
+}
+
+static void report_pedestal_state(void) {
+    if (!g_bridge_pedestal_address) return;
+    struct { u32 magic, version, contract, scans, failures, state;
+             u32 entities, players, pedestals, peak, first_id, last_id; } p = {0};
+    _Static_assert(sizeof(p) == 48, "Pedestal witness layout");
+    MemoryInfo m = {0};
+    Result rc = cheat_query(&m, g_bridge_pedestal_address);
+    if (R_FAILED(rc) || !(m.perm & Perm_R) || m.addr > g_bridge_pedestal_address ||
+        g_bridge_pedestal_address - m.addr > m.size ||
+        sizeof(p) > m.size - (g_bridge_pedestal_address - m.addr)) {
+        log_line("bridge_pedestal=unknown (witness inaccessible)");
+        return;
+    }
+    rc = cheat_read(g_bridge_pedestal_address, &p, sizeof(p));
+    if (R_FAILED(rc) || p.magic != 0x50454431u || p.version != 1u) {
+        log_line("bridge_pedestal=unknown (signature mismatch)");
+        return;
+    }
+    log_line("bridge_pedestal_contract=%" PRIu32 " scans=%" PRIu32 " read_failures=%" PRIu32,
+             p.contract, p.scans, p.failures);
+    log_line("bridge_game_state=%" PRIu32 " entities=%" PRIu32 " players=%" PRIu32,
+             p.state,p.entities,p.players);
+    log_line("bridge_pedestal_current=%" PRIu32 " peak=%" PRIu32 " first_id=%" PRIu32 " last_seen_id=%" PRIu32,
+             p.pedestals,p.peak,p.first_id,p.last_id);
+    if (g_bridge_hook_observed && p.contract == 1 && p.scans && p.peak && p.last_id) {
+        log_line("bridge_pedestal_candidate=OBSERVED (quality/visibility unverified)");
+        printf("Pedestal candidate observed: item %" PRIu32 ".\n", p.last_id);
+    } else {
+        log_line("bridge_pedestal_candidate=NOT_CONFIRMED");
+    }
+}
+
+static void report_bridge_stage(void) {
+    if (!g_bridge_stage_address) {
+        log_line("bridge_callback=unknown (stage address unavailable)");
+        return;
+    }
+    // A stale or mistyped marker may point anywhere. Only accept a candidate
+    // if the hook pointer itself belongs to an executable mapping.
+    if (!g_bridge_hook_address) {
+        log_line("bridge_callback=unknown (hook address unavailable)");
+        return;
+    }
+    MemoryInfo hook_region = {0};
+    Result rc = cheat_query(&hook_region, g_bridge_hook_address);
+    if (R_FAILED(rc) || (hook_region.perm & Perm_Rx) != Perm_Rx ||
+        hook_region.addr > g_bridge_hook_address ||
+        g_bridge_hook_address - hook_region.addr >= hook_region.size) {
+        log_line("bridge_callback=unknown (hook pointer not in executable mapping)");
+        return;
+    }
+    MemoryInfo region = {0};
+    rc = cheat_query(&region, g_bridge_stage_address);
+    if (R_FAILED(rc) || !(region.perm & Perm_R) ||
+        region.addr > g_bridge_stage_address ||
+        g_bridge_stage_address - region.addr > region.size ||
+        sizeof(u32) > region.size - (g_bridge_stage_address - region.addr)) {
+        log_line("bridge_callback=unknown (stage memory inaccessible)");
+        return;
+    }
+    u32 stage = 0;
+    rc = cheat_read(g_bridge_stage_address, &stage, sizeof(stage));
+    if (R_FAILED(rc)) {
+        log_line("bridge_callback=unknown (stage read failed)");
+        return;
+    }
+    report_runtime_counters();
+    report_pedestal_state();
+    report_dance_state();
+    report_specialist_music();
+    log_line("bridge_stage=%" PRIu32 " bridge_got_hook=%s",
+             (uint32_t)stage, g_bridge_hook_observed ? "yes" : "no");
+    if (stage == 8 && g_bridge_hook_observed) {
+        log_line("bridge_callback=SUCCESS (Lua on_update executed in game)");
+        printf("Lua on_update(): SUCCESS!\n");
+    } else if (stage == 9 && g_bridge_hook_observed) {
+        log_line("bridge_callback=ERROR (Lua on_update failed)");
+        printf("Lua callback: ERROR (stage 9).\n");
+    } else {
+        log_line("bridge_callback=NOT_CONFIRMED");
+        printf("Lua callback not confirmed (stage %" PRIu32 ", hook %s).\n",
+               (uint32_t)stage, g_bridge_hook_observed ? "observed" : "absent");
+    }
 }
 
 /* Minimal client: deliberately includes only observation and guarded attach. */
@@ -249,12 +454,26 @@ static bool verify_bridge_contract(u64 base) {
         if (!bounded_read(base + k_contract_bindings[i].got, &pointer, sizeof(pointer), Perm_R)) return false;
         const u64 expected = base + k_contract_bindings[i].target;
         const bool match = pointer == expected;
+        const bool is_our_hook = !match && strcmp(k_contract_bindings[i].name, "IsaacUpdate") == 0 &&
+                                 g_bridge_hook_address && pointer == g_bridge_hook_address;
+        if (is_our_hook) g_bridge_hook_observed = true;
         log_line("bridge_binding=%s actual=0x%016" PRIX64 " expected=0x%016" PRIX64 " result=%s",
-                 k_contract_bindings[i].name, (uint64_t)pointer, (uint64_t)expected, match ? "MATCH" : "OTHER");
-        if (!match) return fail_message("A live function binding differs; no bridge is safe to install.");
+                 k_contract_bindings[i].name, (uint64_t)pointer, (uint64_t)expected,
+                 match ? "MATCH" : (is_our_hook ? "EXPECTED_HOOK" : "OTHER"));
+        if (!match && !is_our_hook) {
+            // A secondary import may point at a resolver or another valid
+            // module-specific target. Preserve the mismatch instead of
+            // abandoning the independent callback-stage observation.
+            g_unexpected_bindings = true;
+            log_line("bridge_binding_warning=%s unexpected_target=0x%016" PRIX64,
+                     k_contract_bindings[i].name, (uint64_t)pointer);
+        }
     }
     ++g_verified_repentance;
-    log_line("bridge_observation=code_and_bindings_match; no hook installed; callback execution untested");
+    log_line("bridge_observation=%s secondary_binding_warnings=%s",
+             g_bridge_hook_observed ? "expected_bridge_hook_observed" :
+             "IsaacUpdate_not_hooked",
+             g_unexpected_bindings ? "yes" : "no");
     return true;
 }
 
@@ -404,8 +623,12 @@ static bool take_snapshot(void) {
     if (!verify_metadata(&before, pid, &loader)) return false;
     log_build_id("verified_main_nso_build_id", before.main_nso_build_id);
     log_loader_got(&before);
+    load_bridge_marker();
     size_t readable_regions = 0, nro_regions = 0;
-    if (!snapshot_mappings(&readable_regions, &nro_regions)) return false;
+    const bool snapshot_ok = snapshot_mappings(&readable_regions, &nro_regions);
+    // Inspect callback state even if a later, unrelated observation failed.
+    report_bridge_stage();
+    if (!snapshot_ok) return false;
     rc = cheat_metadata(&after);
     if (R_FAILED(rc)) return fail_result("read final process metadata", rc);
     if (!verify_metadata(&after, pid, &loader)) return false;
@@ -433,7 +656,7 @@ static bool prepare_log(void) {
         printf("Cannot open log (errno %d).\n", errno);
         return false;
     }
-    log_line("IsaacModuleSnapshot 0.2.0 - bridge contract");
+    log_line("IsaacModuleSnapshot 0.7.0 - Specialist quality, character and music witnesses");
     log_line("observation=bounded executable headers; game memory is never written");
     return true;
 }
@@ -447,7 +670,8 @@ int main(int argc, char **argv) {
     bool ok = prepare_log();
     if (ok) ok = take_snapshot();
     if (g_log) {
-        log_line("result=%s", ok ? "success" : "stopped; partial diagnostics only");
+        log_line("result=%s", !ok ? "stopped; partial diagnostics only" :
+                 (g_unexpected_bindings ? "observation_complete_with_binding_warnings" : "success"));
         const bool write_failed = ferror(g_log) != 0;
         const int close_result = fclose(g_log);
         g_log = NULL;
@@ -474,3 +698,4 @@ int main(int argc, char **argv) {
     consoleExit(NULL);
     return ok ? 0 : 1;
 }
+

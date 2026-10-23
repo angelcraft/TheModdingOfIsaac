@@ -18,7 +18,9 @@ constexpr uintptr_t kCallerReturnOffset = 0x4C0A10;
 constexpr uintptr_t kIsaacUpdateOffset = 0x3B37F0;
 constexpr uintptr_t kMinimumTextSize = kCallerReturnOffset + 8;
 constexpr size_t kMaxScriptBytes = 256 * 1024;
-constexpr unsigned kCallbackLimit = 3;
+constexpr int kLuaInstructionBudget = 100000;
+constexpr unsigned kNroWaitAttempts = 800; // 20 seconds maximum, 25ms each
+constexpr uintptr_t kLazyResolverOffset = 0x66FAA0; // observed shared late-import resolver
 
 // Query the actual mapping of each read; text and GOT live in different mappings.
 bool readable_range(uintptr_t address, size_t length) {
@@ -60,15 +62,29 @@ IsaacUpdate g_original_update = nullptr;
 uintptr_t g_main_base = 0;
 FILE* g_startup_log = nullptr;
 unsigned g_frame = 0;
-unsigned g_callback_count = 0;
-bool g_inside_hook = false;
+bool g_lua_disabled = false;
+struct RuntimeWitness {
+    u32 magic;
+    u32 version;
+    u32 attempted;
+    u32 succeeded;
+    u32 failed;
+};
+static_assert(sizeof(RuntimeWitness) == 20, "Snapshot witness layout");
+alignas(8) RuntimeWitness g_runtime = {0x494C4234u, 1u, 0u, 0u, 0u};
+alignas(4) u32 g_hook_busy = 0;
 bool g_validation_failed = false;
 // Readable from a memory snapshot; no IPC is performed by worker diagnostics.
 // 1=waiting, 2=NRO verified, 3=GOT original, 4=installed,
-// 5=read-only GOT (not patched), 6=unexpected GOT, 7=timeout, 8=Lua success.
+// 5=read-only GOT, 6=unexpected GOT, 7=timeout, 8=Lua success, 9=Lua error.
 alignas(8) u32 g_bridge_stage = 0;
 void set_stage(u32 value) {
-    __atomic_store_n(&g_bridge_stage, value, __ATOMIC_RELEASE);
+    u32 old = __atomic_load_n(&g_bridge_stage, __ATOMIC_ACQUIRE);
+    do {
+        // A completed callback must not be overwritten by the installing worker.
+        if (old == 9 || (old == 8 && value != 9)) return;
+    } while (!__atomic_compare_exchange_n(&g_bridge_stage, &old, value, false,
+                                          __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
 }
 
 bool validate_image(uintptr_t base) {
@@ -103,6 +119,56 @@ int lua_log(lua_State* state) {
     const char* message = lua_tostring(state, 1);
     trace(message ? message : "(Lua non-string)");
     return 0;
+}
+
+#include "pedestal_reader.h"
+#include "dance_driver.h"
+#include "specialist_music.h"
+
+void lua_instruction_limit(lua_State* state, lua_Debug*) {
+    luaL_error(state, "IsaacLuaBridge: Lua instruction budget exceeded");
+}
+
+// These values describe our verified update callback, not Isaac entities.
+int lua_get_frame_count(lua_State* state) {
+    lua_pushinteger(state, static_cast<lua_Integer>(g_frame));
+    return 1;
+}
+
+int lua_get_runtime_state(lua_State* state) {
+    lua_createtable(state, 0, 7);
+    lua_pushliteral(state, "0.7.0");
+    lua_setfield(state, -2, "version");
+    lua_pushliteral(state, "91C73FDD575061318D68886316AFEAC72388B2AB");
+    lua_setfield(state, -2, "target_build_id");
+    lua_pushinteger(state, static_cast<lua_Integer>(g_frame));
+    lua_setfield(state, -2, "frame");
+    lua_pushinteger(state, static_cast<lua_Integer>(
+        __atomic_load_n(&g_runtime.succeeded, __ATOMIC_ACQUIRE)));
+    lua_setfield(state, -2, "completed_callbacks");
+    lua_pushinteger(state, static_cast<lua_Integer>(
+        __atomic_load_n(&g_runtime.failed, __ATOMIC_ACQUIRE)));
+    lua_setfield(state, -2, "failed_callbacks");
+    lua_pushboolean(state, g_original_update != nullptr);
+    lua_setfield(state, -2, "target_verified");
+    lua_pushboolean(state, 0);
+    lua_setfield(state, -2, "callback_limit");
+    return 1;
+}
+
+void register_bridge_api(lua_State* state) {
+    lua_createtable(state, 0, 3);
+    lua_pushcfunction(state, lua_get_frame_count);
+    lua_setfield(state, -2, "GetFrameCount");
+    lua_pushcfunction(state, lua_get_runtime_state);
+    lua_setfield(state, -2, "GetRuntimeState");
+    lua_pushcfunction(state, lua_get_room_collectibles);
+    lua_setfield(state, -2, "GetRoomCollectibles");
+    lua_pushcfunction(state, lua_set_specialist_dance);
+    lua_setfield(state, -2, "SetSpecialistDance");
+    lua_pushcfunction(state, lua_set_specialist_music);
+    lua_setfield(state, -2, "SetSpecialistMusic");
+    lua_setglobal(state, "IsaacBridge");
 }
 
 bool read_script(char** output, size_t* output_size) {
@@ -153,10 +219,15 @@ bool prepare_lua() {
     }
     luaL_openlibs(g_lua);
     lua_register(g_lua, "log", lua_log);
+    register_bridge_api(g_lua);
 
     int status = luaL_loadbuffer(g_lua, source, source_size, "@bridge.lua");
     std::free(source);
-    if (status == 0) status = lua_pcall(g_lua, 0, 0, 0);
+    if (status == 0) {
+        lua_sethook(g_lua, lua_instruction_limit, LUA_MASKCOUNT, kLuaInstructionBudget);
+        status = lua_pcall(g_lua, 0, 0, 0);
+        lua_sethook(g_lua, nullptr, 0, 0);
+    }
     if (status != 0) {
         trace(lua_tostring(g_lua, -1));
         lua_close(g_lua);
@@ -189,34 +260,44 @@ bool resolve_verified_original(uintptr_t return_address) {
 }
 
 void dispatch_lua_update() {
-    if (!g_lua || g_callback_count >= kCallbackLimit) return;
+    if (!g_lua || g_lua_disabled) return;
     lua_getglobal(g_lua, "on_update");
     lua_pushinteger(g_lua, static_cast<lua_Integer>(g_frame));
+    __atomic_add_fetch(&g_runtime.attempted, 1u, __ATOMIC_ACQ_REL);
+    lua_sethook(g_lua, lua_instruction_limit, LUA_MASKCOUNT, kLuaInstructionBudget);
     const int status = lua_pcall(g_lua, 1, 0, 0);
-    ++g_callback_count;
+    lua_sethook(g_lua, nullptr, 0, 0);
     if (status != 0) {
         trace(lua_tostring(g_lua, -1));
         lua_pop(g_lua, 1);
-        g_callback_count = kCallbackLimit;
-    } else if (g_callback_count == 1) {
-        trace("IsaacLuaBridge: first in-game Lua callback completed");
-        set_stage(8);
+        __atomic_add_fetch(&g_runtime.failed, 1u, __ATOMIC_ACQ_REL);
+        g_lua_disabled = true;
+        set_stage(9);
+    } else {
+        const u32 successes = __atomic_add_fetch(
+            &g_runtime.succeeded, 1u, __ATOMIC_ACQ_REL);
+        if (successes == 1) {
+            trace("IsaacLuaBridge: first in-game Lua callback completed");
+            set_stage(8);
+        }
     }
 }
 
 extern "C" void isaac_update_hook() {
-    if (g_inside_hook || g_validation_failed) {
+    // Isaac's update thread must be the only Lua state owner.
+    // If this hook is entered recursively or concurrently, call the original only.
+    if (g_validation_failed ||
+        __atomic_exchange_n(&g_hook_busy, 1u, __ATOMIC_ACQUIRE) != 0) {
         if (g_original_update) g_original_update();
         return;
     }
-    g_inside_hook = true;
 
     if (!g_original_update) {
         const uintptr_t caller = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
         if (!resolve_verified_original(caller)) {
             g_validation_failed = true;
             trace("IsaacLuaBridge: runtime contract mismatch; callback disabled");
-            g_inside_hook = false;
+            __atomic_store_n(&g_hook_busy, 0u, __ATOMIC_RELEASE);
             return;
         }
     }
@@ -224,7 +305,7 @@ extern "C" void isaac_update_hook() {
     g_original_update();
     ++g_frame;
     dispatch_lua_update();
-    g_inside_hook = false;
+    __atomic_store_n(&g_hook_busy, 0u, __ATOMIC_RELEASE);
 }
 
 [[noreturn]] void worker_exit() {
@@ -234,57 +315,84 @@ extern "C" void isaac_update_hook() {
 
 void bridge_worker(void*) {
     set_stage(1);
-    // The verified main loader slot supplies the late NRO base directly.
-    // SaltySDCore_getCodeStart() points at rtld; main follows its 0x4000 mapping.
-    if (!g_main_base || g_main_base > UINTPTR_MAX - 0x10CC78)
+    // The verified loader slot publishes the Repentance NRO entry.
+    // Do not assume its lazy imports are resolved at the exact instant
+    // NRO0 becomes visible.
+    if (!g_main_base || g_main_base > UINTPTR_MAX - 0x10CC78) {
+        set_stage(6);
         worker_exit();
+    }
     const uintptr_t loader_slot = g_main_base + 0x10CC78;
-    for (unsigned attempt = 0; attempt < 4800; ++attempt) {
+    bool saw_verified_nro = false;
+
+    for (unsigned attempt = 0; attempt < kNroWaitAttempts; ++attempt) {
         if (readable_range(loader_slot, sizeof(uintptr_t))) {
             const uintptr_t entry = __atomic_load_n(
                 reinterpret_cast<uintptr_t*>(loader_slot), __ATOMIC_ACQUIRE);
             if (entry >= 0x4C0840) {
                 const uintptr_t base = entry - 0x4C0840;
                 if (validate_image(base)) {
-                    set_stage(2);
+                    if (!saw_verified_nro) {
+                        saw_verified_nro = true;
+                        set_stage(2);
+                    }
                     const uintptr_t got = base + 0xAA5C20;
                     MemoryInfo got_info = {};
                     u32 page_info = 0;
                     if (R_SUCCEEDED(svcQueryMemory(&got_info, &page_info, got)) &&
                         readable_range(got, sizeof(void*))) {
+                        if (!(got_info.perm & Perm_W)) {
+                            set_stage(5);
+                            worker_exit();
+                        }
+
                         void** slot = reinterpret_cast<void**>(got);
-                        void* expected = reinterpret_cast<void*>(base + kIsaacUpdateOffset);
                         void* actual = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
-                        if (actual == expected) {
+                        void* original = reinterpret_cast<void*>(base + kIsaacUpdateOffset);
+                        void* replacement = reinterpret_cast<void*>(isaac_update_hook);
+                        const uintptr_t lazy_address = base + kLazyResolverOffset;
+
+                        // A shared lazy-import resolver was observed at this
+                        // exact offset in previous device snapshots. It must
+                        // still map to executable memory before being accepted.
+                        MemoryInfo lazy_info = {};
+                        const bool lazy_executable =
+                            R_SUCCEEDED(svcQueryMemory(&lazy_info, &page_info, lazy_address)) &&
+                            lazy_info.addr <= lazy_address &&
+                            lazy_address - lazy_info.addr < lazy_info.size &&
+                            (lazy_info.perm & Perm_X);
+
+                        if (actual == original ||
+                            (reinterpret_cast<uintptr_t>(actual) == lazy_address &&
+                             lazy_executable)) {
                             set_stage(3);
-                            g_original_update = reinterpret_cast<IsaacUpdate>(expected);
-                            void* replacement = reinterpret_cast<void*>(isaac_update_hook);
-                            if (!(got_info.perm & Perm_W)) {
-                                set_stage(5);
+                            g_original_update = reinterpret_cast<IsaacUpdate>(original);
+                            // Aggressive, one-slot install: replace only the
+                            // validated original or shared lazy resolver. A
+                            // concurrent relocation fails CAS rather than
+                            // overwriting an unrecognized destination.
+                            void* expected = actual;
+                            if (__atomic_compare_exchange_n(
+                                    slot, &expected, replacement, false,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+                                set_stage(4);
                                 worker_exit();
                             }
-                            if (__atomic_compare_exchange_n(slot, &expected, replacement,
-                                                            false, __ATOMIC_ACQ_REL,
-                                                            __ATOMIC_ACQUIRE)) {
-                                set_stage(4);
-                                trace("IsaacLuaBridge: verified IsaacUpdate GOT installed");
-                            } else {
-                                set_stage(6);
-                            }
-                        } else {
-                            set_stage(6);
+                            // Loader won the race; retry with fresh GOT value.
+                        } else if (actual == replacement) {
+                            // This very instance already owns the slot.
+                            set_stage(4);
+                            worker_exit();
                         }
-                    } else {
-                        set_stage(6);
+                        // All unknown GOT targets are left untouched. Retry
+                        // briefly instead of prematurely ending at stage 6.
                     }
-                    worker_exit();
                 }
             }
         }
         svcSleepThread(25 * 1000 * 1000LL);
     }
-    set_stage(7);
-    trace("IsaacLuaBridge: Repentance loader wait timed out");
+    set_stage(saw_verified_nro ? 6 : 7);
     worker_exit();
 }
 } // namespace
@@ -321,7 +429,7 @@ int main(int, char**) {
 
     g_startup_log = SaltySDCore_fopen(
         "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-startup.log", "wb");
-    trace("IsaacLuaBridge 0.3.4: verified loader route");
+    trace("IsaacLuaBridge 0.7.1: explicit dance playback and guarded music slot 19");
     if (!prepare_lua()) {
         if (g_startup_log) SaltySDCore_fclose(g_startup_log);
         g_startup_log = nullptr;
@@ -347,6 +455,27 @@ int main(int, char**) {
         return 1;
     }
     trace("IsaacLuaBridge: main loader mapping verified");
+    // These addresses allow the existing read-only Snapshot NRO to confirm
+    // the callback without relying on IPC from the late worker/game thread.
+    char marker[112] = {};
+    std::snprintf(marker, sizeof(marker), "bridge_stage_address=0x%016llX",
+                  static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(&g_bridge_stage)));
+    trace(marker);
+    std::snprintf(marker, sizeof(marker), "bridge_hook_address=0x%016llX",
+                  static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(isaac_update_hook)));
+    trace(marker);
+    std::snprintf(marker, sizeof(marker), "bridge_runtime_address=0x%016llX",
+                  static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(&g_runtime)));
+    trace(marker);
+    std::snprintf(marker, sizeof(marker), "bridge_pedestal_address=0x%016llX",
+                  static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(&g_pedestal)));
+    trace(marker);
+    std::snprintf(marker, sizeof(marker), "bridge_dance_address=0x%016llX",
+                  static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(&g_dance)));
+    trace(marker);
+    std::snprintf(marker, sizeof(marker), "bridge_music_address=0x%016llX",
+                  static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(&g_specialist_music)));
+    trace(marker);
     Handle worker = INVALID_HANDLE;
     const Result worker_result = svcCreateThread(
         &worker, reinterpret_cast<void*>(bridge_worker), nullptr,
@@ -361,6 +490,11 @@ int main(int, char**) {
         g_startup_log = nullptr;
         return 1;
     }
+    // The worker must never touch the SaltySD startup file IPC after
+    // the plugin's main() returns. Close it *before* starting that thread.
+    trace("IsaacLuaBridge: NRO worker created; starting");
+    if (g_startup_log) SaltySDCore_fclose(g_startup_log);
+    g_startup_log = nullptr;
     const Result start_result = svcStartThread(worker);
     if (R_FAILED(start_result)) {
         char line[96] = {};
@@ -375,8 +509,8 @@ int main(int, char**) {
     }
     svcCloseHandle(worker);
     trace("IsaacLuaBridge: NRO wait thread started");
-    if (g_startup_log) SaltySDCore_fclose(g_startup_log);
-    g_startup_log = nullptr;
+
     return 0;
 }
+
 

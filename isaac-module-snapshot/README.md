@@ -1,4 +1,29 @@
-# IsaacModuleSnapshot
+# IsaacModuleSnapshot 0.4.0 — continuous callback witness
+
+With IsaacLuaBridge 0.4.0 this existing reader also checks the startup runtime
+marker, its version/signature and memory bounds, and reports attempted,
+successful and failed callbacks. More than three successful callbacks with
+zero errors and the expected GOT hook produces `bridge_continuous=OBSERVED`.
+This measures callback counts; it does not establish frame rate or Specialist.
+The stage/hook witness remains compatible with 0.3.8, whose runtime counters
+are reported unavailable. No new native offsets, memory writes or tools are added.
+
+
+Esta rama amplía el lector ya existente (no crea una herramienta nueva).
+Si IsaacLuaBridge 0.3.5 también está instalado, lee las direcciones de estado
+que dejó en `bridge-startup.log`, verifica la entrada GOT de IsaacUpdate y
+muestra `Lua on_update(): SUCCESS!` solo si el hook esperado sigue instalado
+y el estado indica que Lua completó su primer callback. El log añade
+`bridge_stage`, `bridge_got_hook` y `bridge_callback`.
+Un resultado no confirmado NO demuestra que el hook funcione.
+
+El observador 0.3.1 no aborta por un único enlace GOT *secundario* que
+apunte a una dirección distinta del cuerpo original: marca
+`bridge_binding_warning`, verifica las otras entradas y sigue hasta
+`bridge_stage` y `bridge_callback`. El destino no se asume válido:
+`result=observation_complete_with_binding_warnings` indica una observación
+parcialmente discrepante, NO que el código sea seguro ni que funcione Specialist.
+La coincidencia del build y las firmas de funciones sigue siendo obligatoria.
 
 Diagnóstico independiente para observar los módulos cargados por Isaac en la
 Switch. Genera un archivo de texto; todavía no ejecuta el mod ni expone la API de
