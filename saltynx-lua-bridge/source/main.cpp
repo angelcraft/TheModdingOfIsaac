@@ -266,7 +266,10 @@ bool resolve_verified_original(uintptr_t return_address) {
 
 void dispatch_lua_update() {
     if (!g_lua) return;
-    if (!g_lua_disabled) {
+    // In Workshop smoke-test mode, do not simultaneously execute the
+    // currently experimental legacy Specialist dance/music path.
+    // No manifest (or zero callbacks) keeps the original behavior intact.
+    if (!g_lua_disabled && g_workshop_callback_count == 0) {
         lua_getglobal(g_lua, "on_update");
         lua_pushinteger(g_lua, static_cast<lua_Integer>(g_frame));
         __atomic_add_fetch(&g_runtime.attempted, 1u, __ATOMIC_ACQ_REL);
