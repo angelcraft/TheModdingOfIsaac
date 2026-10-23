@@ -130,6 +130,10 @@ void workshop_copy_env_value(lua_State* state, int environment_index, const char
         lua_settable(state, copy_index);
         lua_pop(state, 1);
     }
+    // Vector is a callable API table (Vector(x, y)); preserve its
+    // constructor metatable when making a mod-local table copy.
+    if (std::strcmp(name, "Vector") == 0 && lua_getmetatable(state, source_index))
+        lua_setmetatable(state, copy_index);
     lua_setfield(state, environment_index, name);
     lua_pop(state, 1);
 }
@@ -304,7 +308,7 @@ void workshop_load_mod(lua_State* state, const char* id) {
             "_VERSION", "assert", "error", "ipairs", "pairs", "next", "type",
             "tonumber", "tostring", "select", "unpack", "pcall", "xpcall",
             "math", "string", "table", "coroutine",
-            "log", "RegisterMod", "ModCallbacks", "IsaacBridge", "Isaac"
+            "log", "RegisterMod", "ModCallbacks", "IsaacBridge", "Isaac", "Vector"
         };
         for (size_t i = 0; i < sizeof(allowed)/sizeof(allowed[0]); ++i)
             workshop_copy_env_value(state, environment_index, allowed[i]);
