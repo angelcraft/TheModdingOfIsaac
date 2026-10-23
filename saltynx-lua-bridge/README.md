@@ -2,7 +2,9 @@
 
 This isolated feature branch adds optional SD-based PC-style Lua mod loading:
 `RegisterMod` + `MC_POST_UPDATE` only. The current, previously verified
-specialized Specialist bridge.lua still runs independently.
+specialized Specialist bridge.lua is preserved but its per-frame callback is paused
+when at least one Workshop callback is enabled, preventing two dance/music
+implementations from running together.
 
 When `sd:/switch/TheModdingOfIsaac/mods.txt` is missing, **no Workshop scripts
 are loaded**. For an opt-in smoke test install the bundled demo from
