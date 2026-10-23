@@ -117,6 +117,8 @@ int main(int argc, char** argv) {
     lua_newtable(state);
     const int vector_env = lua_gettop(state);
     workshop_copy_env_value(state, vector_env, "Vector");
+    workshop_copy_env_value(state, vector_env, "assert");
+    workshop_copy_env_value(state, vector_env, "math");
     if (luaL_loadstring(state,
         "local v = Vector(3, 4); assert(v:Length() == 5); "
         "assert(Vector.FromAngle(0).X == 1)") != 0) {
