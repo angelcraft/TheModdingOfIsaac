@@ -4,6 +4,7 @@
 // SaltyNX plugin startup. Lua callbacks run later, on IsaacUpdate's owner.
 // No PC entity/music APIs are simulated; unsupported calls fail visibly.
 // Do not run untrusted mods: Lua scripts are native-game-adjacent code.
+// This whitelisted namespace is not a security boundary or a true VM sandbox.
 
 constexpr size_t kWorkshopMaxMods = 4;
 constexpr size_t kWorkshopMaxCallbacks = 32;
@@ -131,15 +132,21 @@ void workshop_load_mod(lua_State* state, const char* id) {
     int status = luaL_loadbuffer(state, source, read, path);
     std::free(source);
     if (status == 0) {
-        // One global namespace per mod, with the restricted host globals as a
-        // fallback. Avoid accidental overwrites across different mods.
+        // Each mod has its own deliberately small global namespace:
+        // no io, os, debug, package, require, loadfile or dofile.
         lua_newtable(state); // [chunk, env]
         lua_pushvalue(state, -1);
         lua_setfield(state, -2, "_G");
-        lua_newtable(state); // [chunk, env, metatable]
-        lua_pushvalue(state, LUA_GLOBALSINDEX);
-        lua_setfield(state, -2, "__index");
-        lua_setmetatable(state, -2);
+        const char* allowed[] = {
+            "_VERSION", "assert", "error", "ipairs", "pairs", "next", "type",
+            "tonumber", "tostring", "select", "unpack", "pcall", "xpcall",
+            "math", "string", "table", "coroutine",
+            "log", "RegisterMod", "ModCallbacks", "IsaacBridge"
+        };
+        for (size_t i = 0; i < sizeof(allowed)/sizeof(allowed[0]); ++i) {
+            lua_getglobal(state, allowed[i]);
+            lua_setfield(state, -2, allowed[i]);
+        }
         lua_setfenv(state, -2); // pops env
         g_workshop_loading = true;
         lua_sethook(state, lua_instruction_limit, LUA_MASKCOUNT, kLuaInstructionBudget);
