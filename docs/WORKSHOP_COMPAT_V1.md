@@ -67,7 +67,7 @@ Use the offline, read-only extractor for a broad static map of functions and cal
     python isaac-module-snapshot/tools/catalog_nro_calls.py path/to/Repentance.nro --output path/to/isaac-call-catalog
 
 Input NRO is kept on your PC and SHA-256 checked. No game executable, assets or machine code bytes are uploaded to GitHub.
-The output directory contains plt_imports.csv (validated imports), dyn_symbols.csv (named dynamic symbols), calls.csv (direct BL sites and indirect BLR sites), and summary.json.
+The call table now includes a symbol label for the caller and direct target when available, the resolution source, and the defined body offset when an imported PLT name matches a defined function in this exact NRO. A static room-transition path is visible from `RoomTransition::Update` through `RoomTransition::change_room`, `Game::ChangeRoom(int,int)`, and `Level::ChangeRoom(int,int)`. This is a candidate for targeted follow-up, not proof of runtime callback timing or a safe hook contract. `Entity_Pickup::Init` and `Entity_Pickup::Update` are named symbols too, while virtual calls remain unresolved by this catalog.\n\nThe output directory contains plt_imports.csv (validated imports), dyn_symbols.csv (named dynamic symbols), calls.csv (direct BL sites and indirect BLR sites), and summary.json.
 BLR target addresses cannot be determined statically, and the list does not prove signatures, C++ object layouts, runtime execution or PC mod API semantics. Those must be verified individually before issuing native calls.
 
 ## Rollback
