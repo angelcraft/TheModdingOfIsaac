@@ -101,7 +101,12 @@ int main(int argc, char** argv) {
         "assert((2 * Vector(2, 3)) == Vector(4, 6)); "
         "assert(v:Dot(Vector(2, 1)) == 10); "
         "assert(v:Distance(Vector(0, 0)) == 5); "
+        "assert(Vector.Distance(v, Vector(0, 0)) == 5); "
+        "assert(Vector.DistanceSquared(v, Vector(0, 0)) == 25); "
+        "local mid = Vector.Lerp(Vector(0, 0), Vector(10, 10), 0.25); "
+        "assert(mid == Vector(2.5, 2.5)); "
         "local d = Vector.FromAngle(90); assert(math.abs(d.X) < 0.00001 and math.abs(d.Y - 1) < 0.00001); "
+        "local unit = v:Normalized(); assert(math.abs(unit:Length() - 1) < 0.00001); "
         "v.X = 6; assert(v.X == 6); "
         "local r = Vector(1, 0):Rotated(90); assert(math.abs(r.X) < 0.00001 and math.abs(r.Y - 1) < 0.00001)") != 0) {
         std::cerr << "Vector API behavior mismatch: " << lua_tostring(state, -1) << '\n';
