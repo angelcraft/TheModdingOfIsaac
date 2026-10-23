@@ -168,9 +168,10 @@ static void report_workshop_state(void) {
         log_line("workshop=unavailable (old bridge or no marker)");
         return;
     }
-    struct { u32 magic, version, loaded, errors, registered, callback_success,
-                 callback_errors, room_callback_success; } w = {0};
-    _Static_assert(sizeof(w) == 32, "Workshop witness layout");
+    struct { u32 magic, version, loaded, errors, callback_success,
+                 callback_errors, registered_post_update, registered_post_new_room,
+                 room_callback_success; } w = {0};
+    _Static_assert(sizeof(w) == 36, "Workshop witness layout");
     MemoryInfo m = {0};
     Result rc = cheat_query(&m, g_bridge_workshop_address);
     if (R_FAILED(rc) || !(m.perm & Perm_R) ||
@@ -181,13 +182,15 @@ static void report_workshop_state(void) {
         return;
     }
     rc = cheat_read(g_bridge_workshop_address, &w, sizeof(w));
-    if (R_FAILED(rc) || w.magic != 0x574D4431u || w.version != 1u) {
+    if (R_FAILED(rc) || w.magic != 0x574D4431u || w.version != 2u) {
         log_line("workshop=unknown (signature mismatch)");
         return;
     }
-    log_line("workshop_loaded=%" PRIu32 " load_errors=%" PRIu32
-             " registered_post_update=%" PRIu32,
-             w.loaded, w.errors, w.registered);
+    log_line("workshop_loaded=%" PRIu32 " load_errors=%" PRIu32,
+             w.loaded, w.errors);
+    log_line("workshop_registered_post_update=%" PRIu32
+             " registered_post_new_room=%" PRIu32,
+             w.registered_post_update, w.registered_post_new_room);
     log_line("workshop_callback_success=%" PRIu32
              " callback_errors=%" PRIu32
              " room_callback_success=%" PRIu32,
