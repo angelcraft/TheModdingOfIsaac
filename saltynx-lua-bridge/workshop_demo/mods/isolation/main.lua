@@ -14,6 +14,8 @@ expect("coroutine library", coroutine.__tmi_isolation_probe == nil)
 expect("ModCallbacks table", ModCallbacks.MC_POST_UPDATE == 1)
 expect("IsaacBridge table", IsaacBridge.__tmi_isolation_probe == nil)
 expect("Isaac API table", Isaac.__tmi_isolation_probe == nil)
+local item_four = Isaac.GetItemConfig():GetCollectible(4)
+expect("ItemConfig API wrapper isolation", item_four and item_four.Quality == 4)
 
 if #failures == 0 then
     log("Workshop isolation: PASS (globals, libraries, API tables)")

@@ -10,7 +10,6 @@ constexpr size_t kCollectibleQualityLimit = 2048;
 constexpr size_t kCollectibleMetadataMaxBytes = 256 * 1024;
 static int8_t g_collectible_quality[kCollectibleQualityLimit];
 static bool g_collectible_metadata_loaded = false;
-static int g_item_config_table_ref = LUA_NOREF;
 
 bool item_metadata_attribute(const char* begin, const char* end,
                              const char* wanted, int& value) {
@@ -143,23 +142,14 @@ int lua_item_config_get_collectible(lua_State* state) {
 }
 
 int lua_isaac_get_item_config(lua_State* state) {
-    if (g_item_config_table_ref == LUA_NOREF) {
-        lua_pushnil(state);
-        return 1;
-    }
-    lua_rawgeti(state, LUA_REGISTRYINDEX, g_item_config_table_ref);
+    lua_newtable(state);
+    lua_pushcfunction(state, lua_item_config_get_collectible);
+    lua_setfield(state, -2, "GetCollectible");
     return 1;
 }
 
 void register_item_config_api(lua_State* state) {
     item_metadata_load();
-    lua_newtable(state);
-    lua_pushcfunction(state, lua_item_config_get_collectible);
-    lua_setfield(state, -2, "GetCollectible");
-    if (g_item_config_table_ref != LUA_NOREF)
-        luaL_unref(state, LUA_REGISTRYINDEX, g_item_config_table_ref);
-    g_item_config_table_ref = luaL_ref(state, LUA_REGISTRYINDEX);
-
     lua_newtable(state);
     lua_pushcfunction(state, lua_isaac_get_item_config);
     lua_setfield(state, -2, "GetItemConfig");

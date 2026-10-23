@@ -12,6 +12,8 @@ coroutine.__tmi_isolation_probe = "demo"
 ModCallbacks.MC_POST_UPDATE = 999
 IsaacBridge.__tmi_isolation_probe = "demo"
 Isaac.__tmi_isolation_probe = "demo"
+local config_probe = Isaac.GetItemConfig()
+config_probe.GetCollectible = function() return nil end
 workshop_global_probe = "demo"
 
 local function post_update(self)
