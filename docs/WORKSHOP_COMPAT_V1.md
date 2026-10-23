@@ -47,6 +47,12 @@ This inventory comes from the user's local original Workshop `main.lua`; the pro
 
 The original declares handlers with colon syntax, such as `function Epic:OnGameUpdate()`, and registers the resulting functions as `Epic.OnGameUpdate`. The loader stores the mod table and supplies it as argument 1 (the Lua `self`). That narrow calling convention is implemented. The start/exit callbacks also need their expected lifecycle and event arguments; they are not made compatible just by accepting their IDs.
 
+### Static evidence for collectible configuration
+
+The local Repentance NRO used for the current catalogue has SHA-256 `CC363208C220F65547EDDA6D8268B3B6C0F7373B14C91AE6FFB378018DE4B66A`, matching the NRO in `inputs/update-romfs/Repentance.nro`. Its dynamic symbol table contains a defined `IsaacRepentance::ItemConfig::GetCollectible(int)` symbol at file offset `0x3C0C50` (76 bytes); the static catalogue reports 517 direct BL sites to its PLT import, mostly from game-owned functions such as `Entity_Player::EvaluateItems`.
+
+This proves the method exists and is used internally in this exact binary. It does **not** prove a safe way to obtain the `ItemConfig` instance, its ABI contract for an injected caller, or the object's lifetime on the update thread. The bridge therefore continues to read the user's extracted collectible quality metadata from SD and does not call this native method. No offset or call target should be used until the object acquisition path and call contract are independently verified.
+
 ### Original Specialist API requirements
 
 | Original API or value | Use in the source | Current 0.8.0 status |
