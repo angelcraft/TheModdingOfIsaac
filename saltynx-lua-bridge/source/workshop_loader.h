@@ -17,10 +17,11 @@ struct WorkshopCallback {
 };
 WorkshopCallback g_workshop_callbacks[kWorkshopMaxCallbacks] = {};
 size_t g_workshop_callback_count = 0;
-u32 g_workshop_loaded = 0;
-u32 g_workshop_errors = 0;
-u32 g_workshop_callback_success = 0;
-u32 g_workshop_callback_errors = 0;
+struct WorkshopWitness {
+    u32 magic, version, loaded, errors, registered, callback_success, callback_errors;
+};
+static_assert(sizeof(WorkshopWitness) == 28, "Snapshot Workshop witness layout");
+alignas(8) WorkshopWitness g_workshop = {0x574D4431u, 1u, 0u, 0u, 0u, 0u, 0u};
 bool g_workshop_loading = false;
 
 void workshop_release_from(lua_State* state, size_t first) {
@@ -30,6 +31,7 @@ void workshop_release_from(lua_State* state, size_t first) {
         luaL_unref(state, LUA_REGISTRYINDEX, cb.function_ref);
         cb = {};
     }
+    g_workshop.registered = static_cast<u32>(g_workshop_callback_count);
 }
 
 int lua_workshop_add_callback(lua_State* state) {
@@ -48,6 +50,7 @@ int lua_workshop_add_callback(lua_State* state) {
     cb.function_ref = luaL_ref(state, LUA_REGISTRYINDEX);
     cb.disabled = false;
     ++g_workshop_callback_count;
+    g_workshop.registered = static_cast<u32>(g_workshop_callback_count);
     return 0;
 }
 
@@ -90,13 +93,13 @@ void workshop_load_mod(lua_State* state, const char* id) {
         path, sizeof(path),
         "sdmc:/switch/TheModdingOfIsaac/mods/%s/main.lua", id);
     if (n <= 0 || n >= static_cast<int>(sizeof(path))) {
-        ++g_workshop_errors;
+        ++g_workshop.errors;
         return;
     }
     FILE* file = SaltySDCore_fopen(path, "rb");
     if (!file) {
         trace("Workshop: main.lua missing (see mods.txt)");
-        ++g_workshop_errors;
+        ++g_workshop.errors;
         return;
     }
     SaltySDCore_fseek(file, 0, SEEK_END);
@@ -105,14 +108,14 @@ void workshop_load_mod(lua_State* state, const char* id) {
     if (length <= 0 || length > static_cast<int64_t>(kWorkshopMaxMainLua)) {
         SaltySDCore_fclose(file);
         trace("Workshop: invalid main.lua size (max 64 KiB)");
-        ++g_workshop_errors;
+        ++g_workshop.errors;
         return;
     }
     char* source = static_cast<char*>(std::malloc(static_cast<size_t>(length)));
     if (!source) {
         SaltySDCore_fclose(file);
         trace("Workshop: insufficient memory for Lua source");
-        ++g_workshop_errors;
+        ++g_workshop.errors;
         return;
     }
     const size_t read = SaltySDCore_fread(source, 1, static_cast<size_t>(length), file);
@@ -120,7 +123,7 @@ void workshop_load_mod(lua_State* state, const char* id) {
     if (read != static_cast<size_t>(length)) {
         std::free(source);
         trace("Workshop: main.lua read was incomplete");
-        ++g_workshop_errors;
+        ++g_workshop.errors;
         return;
     }
 
@@ -149,10 +152,10 @@ void workshop_load_mod(lua_State* state, const char* id) {
         trace(error ? error : "Workshop: Lua load error");
         lua_pop(state, 1);
         workshop_release_from(state, callbacks_before);
-        ++g_workshop_errors;
+        ++g_workshop.errors;
         return;
     }
-    ++g_workshop_loaded;
+    ++g_workshop.loaded;
     char notice[96] = {};
     std::snprintf(notice, sizeof(notice), "Workshop: loaded mod %s", id);
     trace(notice);
@@ -171,7 +174,7 @@ void workshop_load_manifest(lua_State* state) {
     SaltySDCore_fseek(file, 0, SEEK_SET);
     if (len < 0 || len > 1024) {
         SaltySDCore_fclose(file);
-        ++g_workshop_errors;
+        ++g_workshop.errors;
         trace("Workshop: mods.txt too large");
         return;
     }
@@ -179,7 +182,7 @@ void workshop_load_manifest(lua_State* state) {
     const size_t got = SaltySDCore_fread(buffer, 1, static_cast<size_t>(len), file);
     SaltySDCore_fclose(file);
     if (got != static_cast<size_t>(len)) {
-        ++g_workshop_errors;
+        ++g_workshop.errors;
         trace("Workshop: failed to read mods.txt");
         return;
     }
@@ -189,22 +192,23 @@ void workshop_load_manifest(lua_State* state) {
     for (;;) {
         char* end = cursor;
         while (*end && *end != '\n' && *end != '\r') ++end;
-        const bool done = (*end == '\0');
-        if (!done) { *end = '\0'; }
+        const char separator = *end;
+        const bool done = (separator == '\0');
+        if (!done) *end = '\0';
         const size_t n = std::strlen(cursor);
         if (n && cursor[0] != '#') {
             if (!workshop_valid_id(cursor, n)) {
-                ++g_workshop_errors;
+                ++g_workshop.errors;
                 trace("Workshop: rejected invalid mod id in mods.txt");
             } else if (count >= kWorkshopMaxMods) {
-                ++g_workshop_errors;
+                ++g_workshop.errors;
                 trace("Workshop: max 4 enabled mods");
             } else {
                 bool duplicate = false;
                 for (size_t i = 0; i < count; ++i)
                     if (std::strcmp(seen[i], cursor) == 0) duplicate = true;
                 if (duplicate) {
-                    ++g_workshop_errors;
+                    ++g_workshop.errors;
                     trace("Workshop: duplicate mod id");
                 } else {
                     std::memcpy(seen[count], cursor, n + 1);
@@ -215,16 +219,16 @@ void workshop_load_manifest(lua_State* state) {
         }
         if (done) break;
         cursor = end + 1;
-        // Treat CRLF as one separator. Standalone CR also supported.
-        if (cursor[0] == '\n' && end[0] == '\0' && cursor > buffer &&
-            cursor[-1] == '\0') ++cursor;
+        // Ignore the second byte of a Windows CRLF separator.
+        if (separator == '\r' && cursor[0] == '\n')
+            ++cursor;
         if (!*cursor) break;
     }
     char info[96] = {};
     std::snprintf(info, sizeof(info), "Workshop: %u mods, %u callbacks, %u errors",
-                  static_cast<unsigned>(g_workshop_loaded),
+                  static_cast<unsigned>(g_workshop.loaded),
                   static_cast<unsigned>(g_workshop_callback_count),
-                  static_cast<unsigned>(g_workshop_errors));
+                  static_cast<unsigned>(g_workshop.errors));
     trace(info);
 }
 
@@ -242,9 +246,9 @@ void workshop_dispatch_post_update(lua_State* state) {
             trace(error ? error : "Workshop: callback error");
             lua_pop(state, 1);
             cb.disabled = true;
-            ++g_workshop_callback_errors;
+            ++g_workshop.callback_errors;
         } else {
-            ++g_workshop_callback_success;
+            ++g_workshop.callback_success;
         }
     }
 }
