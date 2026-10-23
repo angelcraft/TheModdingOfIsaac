@@ -1,19 +1,13 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-
 constexpr size_t kCollectibleQualityLimit = 2048;
 constexpr size_t kCollectibleMetadataMaxBytes = 256 * 1024;
-static int8_t g_collectible_quality[kCollectibleQualityLimit];
+static signed char g_collectible_quality[kCollectibleQualityLimit];
 static bool g_collectible_metadata_loaded = false;
 
 bool item_metadata_attribute(const char* begin, const char* end,
                              const char* wanted, int& value) {
-    const size_t wanted_len = std::strlen(wanted);
+    const size_t wanted_len = ::strlen(wanted);
     const char* p = begin;
     while (p < end) {
         while (p < end && (*p == ' ' || *p == '\t' || *p == '\r' ||
@@ -33,7 +27,7 @@ bool item_metadata_attribute(const char* begin, const char* end,
         const char* digits = p;
         while (p < end && *p != quote) ++p;
         if (p == end) return false;
-        if (name_len == wanted_len && std::memcmp(name, wanted, wanted_len) == 0) {
+        if (name_len == wanted_len && ::memcmp(name, wanted, wanted_len) == 0) {
             if (digits == p) return false;
             int parsed = 0;
             for (const char* q = digits; q < p; ++q) {
@@ -50,7 +44,7 @@ bool item_metadata_attribute(const char* begin, const char* end,
 }
 
 bool item_metadata_load() {
-    std::memset(g_collectible_quality, -1, sizeof(g_collectible_quality));
+    ::memset(g_collectible_quality, -1, sizeof(g_collectible_quality));
     g_collectible_metadata_loaded = false;
     static const char path[] = "sdmc:/switch/TheModdingOfIsaac/items_metadata.xml";
     FILE* file = SaltySDCore_fopen(path, "rb");
@@ -66,7 +60,7 @@ bool item_metadata_load() {
         trace("ItemConfig: invalid items_metadata.xml size");
         return false;
     }
-    char* xml = static_cast<char*>(std::malloc(static_cast<size_t>(length) + 1));
+    char* xml = static_cast<char*>(::malloc(static_cast<size_t>(length) + 1));
     if (!xml) {
         SaltySDCore_fclose(file);
         trace("ItemConfig: insufficient memory for metadata");
@@ -75,7 +69,7 @@ bool item_metadata_load() {
     const size_t read = SaltySDCore_fread(xml, 1, static_cast<size_t>(length), file);
     SaltySDCore_fclose(file);
     if (read != static_cast<size_t>(length)) {
-        std::free(xml);
+        ::free(xml);
         trace("ItemConfig: incomplete metadata read");
         return false;
     }
@@ -84,14 +78,14 @@ bool item_metadata_load() {
     bool valid = true;
     size_t count = 0;
     const char* cursor = xml;
-    while ((cursor = std::strstr(cursor, "<item")) != nullptr) {
+    while ((cursor = ::strstr(cursor, "<item")) != nullptr) {
         const char* tag = cursor + 5;
         if ((*tag >= 'a' && *tag <= 'z') || (*tag >= 'A' && *tag <= 'Z') ||
             (*tag >= '0' && *tag <= '9') || *tag == '_') {
             cursor = tag;
             continue;
         }
-        const char* close = std::strchr(tag, '>');
+        const char* close = ::strchr(tag, '>');
         int id = 0, quality = 0;
         if (!close ||
             !item_metadata_attribute(tag, close, "id", id) ||
@@ -105,15 +99,15 @@ bool item_metadata_load() {
         ++count;
         cursor = close + 1;
     }
-    std::free(xml);
+    ::free(xml);
     if (!valid || count == 0) {
-        std::memset(g_collectible_quality, -1, sizeof(g_collectible_quality));
+        ::memset(g_collectible_quality, -1, sizeof(g_collectible_quality));
         trace("ItemConfig: malformed or unsupported items_metadata.xml");
         return false;
     }
     g_collectible_metadata_loaded = true;
     char message[96] = {};
-    std::snprintf(message, sizeof(message), "ItemConfig: loaded %u collectible qualities",
+    ::snprintf(message, sizeof(message), "ItemConfig: loaded %u collectible qualities",
                   static_cast<unsigned>(count));
     trace(message);
     return true;
