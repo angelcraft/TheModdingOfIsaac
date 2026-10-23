@@ -2,8 +2,7 @@
 
 The experimental bridge currently supports startup loading of a single `main.lua`
 per mod and only `MC_POST_UPDATE`, plus a candidate `MC_POST_NEW_ROOM` signal.
-It does not yet resolve `require`, import resource folders, or expose general
-PC `Game`, entity, player, and music APIs. Before copying another Workshop mod
+It resolves literal dotted `require("folder.module")` names to local `.lua` files during mod startup, but does not provide built-in modules, dynamic loading, resource import, or general PC `Game`, entity, player, and music APIs. Before copying another Workshop mod
 to the SD, inspect it with:
 
 ```text
@@ -18,8 +17,7 @@ or strings, so actual compatibility still requires a game test.
 
 To stage a candidate into a **new** SD package directory, use `--stage` and
 `--mod-id`. The original `main.lua` is copied byte-for-byte. The tool refuses
-to overwrite an existing output directory. The package contains `mods.txt`,
-the mod script, and a report; it does not include or alter the bridge ELF.
+to overwrite an existing output directory. The package contains `mods.txt`, all local `.lua` files (preserving paths), and a report; it does not include or alter the bridge ELF.
 Keep a backup of your existing SD files before installing such a package.
 
 The six mods currently downloaded in the user's Steam Workshop directory were

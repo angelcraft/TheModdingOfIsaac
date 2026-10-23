@@ -121,6 +121,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    if (!has_trace("Workshop modules: PASS (dotted require, private environment, per-mod cache)")) {
+        std::cerr << "Local Lua module loading/cache mismatch\n";
+        lua_close(state);
+        return 1;
+    }
+
     if (!has_trace("Workshop ItemConfig quality filter: PASS (4 accepted; 502 and unknown rejected)")) {
         std::cerr << "Quality-4 filter did not accept/reject expected IDs\n";
         lua_close(state);

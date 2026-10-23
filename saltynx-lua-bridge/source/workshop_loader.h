@@ -9,6 +9,9 @@
 constexpr size_t kWorkshopMaxMods = 4;
 constexpr size_t kWorkshopMaxCallbacks = 32;
 constexpr size_t kWorkshopMaxMainLua = 64 * 1024;
+constexpr size_t kWorkshopMaxModuleFiles = 16;
+constexpr size_t kWorkshopMaxModuleLua = 64 * 1024;
+constexpr size_t kWorkshopMaxTotalLua = 256 * 1024;
 constexpr int kWorkshopPostUpdate = 1;
 constexpr int kWorkshopPostNewRoom = 2;
 
@@ -27,6 +30,9 @@ struct WorkshopWitness {
 static_assert(sizeof(WorkshopWitness) == 36, "Snapshot Workshop witness layout");
 alignas(8) WorkshopWitness g_workshop = {0x574D4431u, 2u, 0u, 0u, 0u, 0u, 0u, 0u, 0u};
 bool g_workshop_loading = false;
+char g_workshop_current_mod_id[41] = {};
+size_t g_workshop_module_count = 0;
+size_t g_workshop_total_lua_bytes = 0;
 uintptr_t g_workshop_room_token = 0;
 bool g_workshop_room_seen = false;
 
@@ -128,6 +134,119 @@ void workshop_copy_env_value(lua_State* state, int environment_index, const char
     lua_pop(state, 1);
 }
 
+int lua_workshop_require(lua_State* state) {
+    if (!g_workshop_loading)
+        return luaL_error(state, "require is supported only while loading a mod");
+    size_t module_len = 0;
+    const char* module = luaL_checklstring(state, 1, &module_len);
+    if (!module_len || module_len > 128)
+        return luaL_error(state, "require module name must contain 1..128 bytes");
+
+    char relative[160] = {};
+    size_t out = 0;
+    bool segment_has_char = false;
+    for (size_t i = 0; i < module_len; ++i) {
+        const char c = module[i];
+        if (c == '.') {
+            if (!segment_has_char || out + 1 >= sizeof(relative))
+                return luaL_error(state, "invalid require module path");
+            relative[out++] = '/';
+            segment_has_char = false;
+        } else if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                   (c >= '0' && c <= '9') || c == '_' || c == '-') {
+            if (out + 1 >= sizeof(relative))
+                return luaL_error(state, "invalid require module path");
+            relative[out++] = c;
+            segment_has_char = true;
+        } else {
+            return luaL_error(state, "require accepts dotted module names only");
+        }
+    }
+    if (!segment_has_char)
+        return luaL_error(state, "invalid require module path");
+    relative[out] = 0;
+
+    // The per-mod cache lives in that mod's private Lua environment.
+    lua_pushvalue(state, lua_upvalueindex(1));
+    const int environment_index = lua_gettop(state);
+    lua_getfield(state, environment_index, "__workshop_loaded_modules");
+    if (!lua_istable(state, -1)) {
+        lua_pop(state, 1);
+        lua_newtable(state);
+        lua_pushvalue(state, -1);
+        lua_setfield(state, environment_index, "__workshop_loaded_modules");
+    }
+    const int cache_index = lua_gettop(state);
+    lua_pushvalue(state, 1);
+    lua_gettable(state, cache_index);
+    if (!lua_isnil(state, -1))
+        return 1;
+    lua_pop(state, 1);
+
+    if (g_workshop_module_count >= kWorkshopMaxModuleFiles)
+        return luaL_error(state, "Workshop mod exceeded 16 Lua modules");
+    char path[256] = {};
+    const int path_len = std::snprintf(path, sizeof(path),
+        "sdmc:/switch/TheModdingOfIsaac/mods/%s/%s.lua",
+        g_workshop_current_mod_id, relative);
+    if (path_len <= 0 || path_len >= static_cast<int>(sizeof(path)))
+        return luaL_error(state, "require module path is too long");
+    FILE* file = SaltySDCore_fopen(path, "rb");
+    if (!file)
+        return luaL_error(state, "required Lua module was not found in this mod");
+    SaltySDCore_fseek(file, 0, SEEK_END);
+    const int64_t length = SaltySDCore_ftell(file);
+    SaltySDCore_fseek(file, 0, SEEK_SET);
+    if (length <= 0 || length > static_cast<int64_t>(kWorkshopMaxModuleLua) ||
+        static_cast<size_t>(length) > kWorkshopMaxTotalLua - g_workshop_total_lua_bytes) {
+        SaltySDCore_fclose(file);
+        return luaL_error(state, "required Lua module exceeds size limits");
+    }
+    char* source = static_cast<char*>(std::malloc(static_cast<size_t>(length)));
+    if (!source) {
+        SaltySDCore_fclose(file);
+        return luaL_error(state, "insufficient memory for required Lua module");
+    }
+    const size_t read = SaltySDCore_fread(source, 1, static_cast<size_t>(length), file);
+    SaltySDCore_fclose(file);
+    if (read != static_cast<size_t>(length)) {
+        std::free(source);
+        return luaL_error(state, "required Lua module read was incomplete");
+    }
+    ++g_workshop_module_count;
+    g_workshop_total_lua_bytes += read;
+
+    // Mark before execution so recursive requires terminate; clear it on error.
+    lua_pushvalue(state, 1);
+    lua_pushboolean(state, 1);
+    lua_settable(state, cache_index);
+    int status = luaL_loadbuffer(state, source, read, path);
+    std::free(source);
+    if (status != 0) {
+        lua_pushvalue(state, 1);
+        lua_pushnil(state);
+        lua_settable(state, cache_index);
+        return lua_error(state);
+    }
+    lua_pushvalue(state, lua_upvalueindex(1));
+    lua_setfenv(state, -2);
+    status = lua_pcall(state, 0, 1, 0);
+    if (status != 0) {
+        lua_pushvalue(state, 1);
+        lua_pushnil(state);
+        lua_settable(state, cache_index);
+        return lua_error(state);
+    }
+    if (lua_isnil(state, -1)) {
+        lua_pop(state, 1);
+        lua_pushboolean(state, 1);
+    }
+    lua_pushvalue(state, 1);
+    lua_pushvalue(state, -2);
+    lua_settable(state, cache_index);
+    return 1;
+}
+
 void workshop_load_mod(lua_State* state, const char* id) {
     char path[180] = {};
     const int n = std::snprintf(
@@ -169,6 +288,9 @@ void workshop_load_mod(lua_State* state, const char* id) {
     }
 
     const size_t callbacks_before = g_workshop_callback_count;
+    std::memcpy(g_workshop_current_mod_id, id, std::strlen(id) + 1);
+    g_workshop_module_count = 0;
+    g_workshop_total_lua_bytes = read;
     int status = luaL_loadbuffer(state, source, read, path);
     std::free(source);
     if (status == 0) {
@@ -186,6 +308,13 @@ void workshop_load_mod(lua_State* state, const char* id) {
         };
         for (size_t i = 0; i < sizeof(allowed)/sizeof(allowed[0]); ++i)
             workshop_copy_env_value(state, environment_index, allowed[i]);
+        // Mod-local require reads dotted module names only during startup,
+        // when SaltySD file IPC is available.
+        lua_newtable(state);
+        lua_setfield(state, environment_index, "__workshop_loaded_modules");
+        lua_pushvalue(state, environment_index);
+        lua_pushcclosure(state, lua_workshop_require, 1);
+        lua_setfield(state, environment_index, "require");
         lua_setfenv(state, -2); // pops env
         g_workshop_loading = true;
         lua_sethook(state, lua_instruction_limit, LUA_MASKCOUNT, kLuaInstructionBudget);
@@ -193,6 +322,9 @@ void workshop_load_mod(lua_State* state, const char* id) {
         lua_sethook(state, nullptr, 0, 0);
         g_workshop_loading = false;
     }
+    g_workshop_current_mod_id[0] = 0;
+    g_workshop_module_count = 0;
+    g_workshop_total_lua_bytes = 0;
     if (status != 0) {
         const char* error = lua_tostring(state, -1);
         trace(error ? error : "Workshop: Lua load error");

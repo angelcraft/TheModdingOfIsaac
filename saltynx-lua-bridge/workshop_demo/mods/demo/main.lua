@@ -10,14 +10,14 @@ if item_four and item_four.ID == 4 and item_four.Quality == 4 and
 else
     log("Workshop ItemConfig: FAIL (metadata missing or values differ)")
 end
-local function has_quality_four(id)
-    local item = Isaac.GetItemConfig():GetCollectible(id)
-    return item ~= nil and item.Quality == 4
-end
-if has_quality_four(4) and not has_quality_four(502) and not has_quality_four(999) then
+local has_quality_four = require("helpers.quality_filter")
+local cached_quality_filter = require("helpers.quality_filter")
+if has_quality_four == cached_quality_filter and workshop_module_probe == 1 and
+   has_quality_four(4) and not has_quality_four(502) and not has_quality_four(999) then
+    log("Workshop modules: PASS (dotted require, private environment, per-mod cache)")
     log("Workshop ItemConfig quality filter: PASS (4 accepted; 502 and unknown rejected)")
 else
-    log("Workshop ItemConfig quality filter: FAIL")
+    log("Workshop modules or ItemConfig quality filter: FAIL")
 end
 local post_update_id = ModCallbacks.MC_POST_UPDATE
 local post_new_room_id = ModCallbacks.MC_POST_NEW_ROOM

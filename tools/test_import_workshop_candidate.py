@@ -12,23 +12,38 @@ spec.loader.exec_module(candidate)
 
 
 class ImportCandidateTest(unittest.TestCase):
-    def test_stages_unmodified_lua_without_overwriting(self):
+    def test_stages_unmodified_main_and_local_modules_without_overwriting(self):
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as temp:
             root = Path(temp)
             source = root / "workshop"
-            source.mkdir()
-            data = b'local m=RegisterMod("Demo",1)\nm:AddCallback(ModCallbacks.MC_POST_UPDATE,function(self) end)\n'
-            (source / "main.lua").write_bytes(data)
+            (source / "helpers").mkdir(parents=True)
+            main = b'local h=require("helpers.quality_filter")\nlocal m=RegisterMod("Demo",1)\nm:AddCallback(ModCallbacks.MC_POST_UPDATE,function(self) end)\n'
+            helper = b'return function(id) return id == 4 end\n'
+            (source / "main.lua").write_bytes(main)
+            (source / "helpers" / "quality_filter.lua").write_bytes(helper)
             report = candidate.inspect(source)
-            self.assertTrue(report["candidate"])
+            self.assertTrue(report["candidate"], report["blockers"])
+            self.assertEqual(report["required_modules"], ["helpers.quality_filter"])
+            self.assertEqual(report["module_files"], ["helpers/quality_filter.lua"])
             output = root / "sd-package"
             candidate.stage(report, source, output, "demo")
-            self.assertEqual((output / "switch/TheModdingOfIsaac/mods/demo/main.lua").read_bytes(), data)
-            self.assertEqual((output / "switch/TheModdingOfIsaac/mods.txt").read_text(), "demo\n")
+            base = output / "switch/TheModdingOfIsaac"
+            self.assertEqual((base / "mods/demo/main.lua").read_bytes(), main)
+            self.assertEqual((base / "mods/demo/helpers/quality_filter.lua").read_bytes(), helper)
+            self.assertEqual((base / "mods.txt").read_text(), "demo\n")
             with self.assertRaises(FileExistsError):
                 candidate.stage(report, source, output, "demo")
 
-    def test_rejects_unsupported_event_and_assets(self):
+    def test_rejects_missing_or_dynamic_modules(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as temp:
+            source = Path(temp)
+            (source / "main.lua").write_text('local a=require("missing.module")\nlocal b=require(name)\n')
+            report = candidate.inspect(source)
+            self.assertFalse(report["candidate"])
+            self.assertTrue(any("missing" in item for item in report["blockers"]))
+            self.assertTrue(any("dynamic or non-literal require" in item for item in report["blockers"]))
+
+    def test_rejects_unsupported_event_apis_and_assets(self):
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as temp:
             source = Path(temp)
             (source / "main.lua").write_text(
@@ -45,4 +60,3 @@ class ImportCandidateTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

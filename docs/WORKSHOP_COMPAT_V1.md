@@ -5,7 +5,7 @@
 ## Design
 
 - SaltyNX/SaltySD injects IsaacLuaBridge ELF and hosts Lua 5.1 in the exact verified Switch Repentance NRO.
-- The plugin reads mods.txt plus up to four main.lua files during plugin startup, while SaltySD file IPC is available; no file IPC is used in the game's update callback.
+- The plugin reads mods.txt plus up to four main.lua files during plugin startup, while SaltySD file IPC is available. Mods may use `require("folder.module")` for local `.lua` files only; module source is loaded and cached in that mod's private environment. No file IPC is used in the game's update callback.
 - The working IsaacUpdate hook invokes registered Workshop handlers on the game update thread. MC_POST_NEW_ROOM is currently a candidate synthesized from a change in the already observed room pointer; its timing and reliability still require device validation. No new native call or memory write is used. The Snapshot reports registrations and successes separately for each implemented event. If at least one Workshop callback is registered, it temporarily skips the old Specialist on_update logic to keep the smoke test isolated. Without mod callbacks, legacy behavior is unchanged.
 - Each mod gets a distinct `_G` plus shallow copies of mutable `math`, `string`, `table`, `coroutine`, `ModCallbacks`, and `IsaacBridge` tables. Lua functions and VM-level state such as the pseudorandom generator remain shared; this is namespace separation, NOT a secure sandbox. Only use mods you trust.
 - The read-only IsaacModuleSnapshot 0.8.0 reads Workshop counts via a versioned witness address written to bridge-startup.log.
@@ -29,7 +29,7 @@ mods.txt must contain one lowercase mod folder id per line. Example: demo.
 The demo also checks `Isaac.GetItemConfig()` during startup and should log `Workshop ItemConfig: PASS (id 4 quality 4; id 502 quality 1)` in `bridge-startup.log` when the metadata file is read correctly.
 
 The Switch log from 2026-10-23 confirms `ItemConfig: loaded 721 collectible qualities` and the demo returned quality 4 for ID 4 and quality 1 for ID 502. The Specialist bridge Lua now queries this same ItemConfig for each pedestal and selects only quality-4 items; the temporary any-pedestal mode and the ID 502 exception are removed. To test legacy Specialist behavior, disable `mods.txt` first: when Workshop callbacks are active, the loader intentionally suppresses the legacy Specialist `on_update` path.
-Without mods.txt, the legacy bridge remains the only Lua script. Maximum 4 mod folders, 32 registered callbacks, 64 KiB per main.lua. The bundled two-mod test mutates one mod's globals and API/library tables, then requires the second mod to log `Workshop isolation: PASS`; Snapshot should show `registered_post_update=2` and `registered_post_new_room=2`.
+Without mods.txt, the legacy bridge remains the only Lua script. Maximum 4 mod folders, 32 registered callbacks, 64 KiB per main.lua/module, 16 required modules and 256 KiB total Lua source per mod. The bundled two-mod test mutates one mod's globals and API/library tables, then requires the second mod to log `Workshop isolation: PASS`; Snapshot should show `registered_post_update=2` and `registered_post_new_room=2`.
 Close and restart Isaac fully. Enter a room, let callbacks run, then run the Snapshot 0.8.0 using the existing safe Homebrew method.
 Look for workshop_loaded=1, registered_post_update=1 and increasing workshop_callback_success. In Workshop-only test mode bridge_stage may stay at 4, because the old Specialist on_update callback is intentionally skipped. A real device test has not yet occurred.
 To disable the demo, rename mods.txt; to return fully to a known installation, restore your saved ELF.
@@ -93,10 +93,11 @@ Do not invoke all callback IDs with fabricated parameters. That would only exerc
 - mod:AddCallback(ModCallbacks.MC_POST_UPDATE, fn)
 - mod:AddCallback(ModCallbacks.MC_POST_NEW_ROOM, fn) (candidate room-transition signal; not yet confirmed on hardware)
 - Basic Lua 5.1 functions and math/string/table/coroutine libraries.
+- Startup-only local `require("folder.module")` resolving to `<mod folder>/folder/module.lua`. It is not Lua's `package` loader and does not provide built-in `json`.
 - `Isaac.GetItemConfig():GetCollectible(id)` with exact `ID` and `Quality` loaded from `sd:/switch/TheModdingOfIsaac/items_metadata.xml`; absent/unknown entries return `nil`, and localized names are not fabricated.
 - Existing IsaacBridge functions still exist, but they are NOT PC Isaac functions.
 
-Unsupported: Game(), Isaac.GetRoomEntities, `Isaac.GetItemConfig().GetCollectible(id).Name`, MusicManager(), Isaac.GetCostumeIdByPath, MC_POST_NEW_LEVEL, MC_POST_PICKUP_INIT, MC_POST_PLAYER_UPDATE, MC_USE_ITEM, MC_USE_CARD, MC_POST_GAME_STARTED, MC_PRE_GAME_EXIT, require, file IO, save data, other callbacks, automatic resource merging and rendering/music imports.
+Unsupported: Game(), Isaac.GetRoomEntities, `Isaac.GetItemConfig().GetCollectible(id).Name`, MusicManager(), Isaac.GetCostumeIdByPath, MC_POST_NEW_LEVEL, MC_POST_PICKUP_INIT, MC_POST_PLAYER_UPDATE, MC_USE_ITEM, MC_USE_CARD, MC_POST_GAME_STARTED, MC_PRE_GAME_EXIT, `require("json")` unless the mod supplies a local compatible `json.lua`, dynamic/native module loading, file IO, save data, other callbacks, automatic resource merging and rendering/music imports.
 The original PC Specialist main.lua therefore cannot run unmodified. This is deliberately a small loader proof of concept; no claims about native music or animation compatibility.
 
 ## Catalog calls from the original NRO
