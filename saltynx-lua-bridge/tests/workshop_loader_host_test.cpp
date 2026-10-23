@@ -67,6 +67,7 @@ static int SaltySDCore_fclose(FILE* file) {
 
 #include "../source/workshop_loader.h"
 #include "../source/item_config.h"
+#include "../source/vector_api.h"
 
 static bool has_trace(const char* expected) {
     for (const auto& line : g_trace)
@@ -92,6 +93,40 @@ int main(int argc, char** argv) {
     lua_setglobal(state, "IsaacBridge");
     workshop_register_compat(state);
     register_item_config_api(state);
+    register_vector_api(state);
+    if (luaL_dostring(state,
+        "local v = Vector(3, 4); assert(v.X == 3 and v.Y == 4); "
+        "assert(v:Length() == 5 and v:LengthSquared() == 25); "
+        "assert((v + Vector(1, 2)) == Vector(4, 6)); "
+        "assert((2 * Vector(2, 3)) == Vector(4, 6)); "
+        "assert(v:Dot(Vector(2, 1)) == 10); "
+        "assert(v:Distance(Vector(0, 0)) == 5); "
+        "local d = Vector.FromAngle(90); assert(math.abs(d.X) < 0.00001 and math.abs(d.Y - 1) < 0.00001); "
+        "v.X = 6; assert(v.X == 6); "
+        "local r = Vector(1, 0):Rotated(90); assert(math.abs(r.X) < 0.00001 and math.abs(r.Y - 1) < 0.00001)") != 0) {
+        std::cerr << "Vector API behavior mismatch: " << lua_tostring(state, -1) << '\\n';
+        lua_close(state);
+        return 1;
+    }
+    lua_newtable(state);
+    const int vector_env = lua_gettop(state);
+    workshop_copy_env_value(state, vector_env, "Vector");
+    if (luaL_loadstring(state,
+        "local v = Vector(3, 4); assert(v:Length() == 5); "
+        "assert(Vector.FromAngle(0).X == 1)") != 0) {
+        std::cerr << "could not compile isolated Vector check: " << lua_tostring(state, -1) << '\\n';
+        lua_close(state);
+        return 1;
+    }
+    lua_pushvalue(state, vector_env);
+    lua_setfenv(state, -2);
+    if (lua_pcall(state, 0, 0, 0) != 0) {
+        std::cerr << "isolated Vector API mismatch: " << lua_tostring(state, -1) << '\\n';
+        lua_close(state);
+        return 1;
+    }
+    lua_pop(state, 1);
+    trace("Workshop Vector: PASS (math, operators, mutable components, isolated constructor)");
     if (luaL_dostring(state,
         "local c = Isaac.GetItemConfig(); "
         "local hi = c:GetCollectible(4); "
