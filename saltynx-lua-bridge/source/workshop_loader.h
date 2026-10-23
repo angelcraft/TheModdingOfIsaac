@@ -21,10 +21,10 @@ struct WorkshopCallback {
 WorkshopCallback g_workshop_callbacks[kWorkshopMaxCallbacks] = {};
 size_t g_workshop_callback_count = 0;
 struct WorkshopWitness {
-    u32 magic, version, loaded, errors, registered, callback_success, callback_errors;
+    u32 magic, version, loaded, errors, registered, callback_success, callback_errors, room_callback_success;
 };
-static_assert(sizeof(WorkshopWitness) == 28, "Snapshot Workshop witness layout");
-alignas(8) WorkshopWitness g_workshop = {0x574D4431u, 1u, 0u, 0u, 0u, 0u, 0u};
+static_assert(sizeof(WorkshopWitness) == 32, "Snapshot Workshop witness layout");
+alignas(8) WorkshopWitness g_workshop = {0x574D4431u, 1u, 0u, 0u, 0u, 0u, 0u, 0u};
 bool g_workshop_loading = false;
 uintptr_t g_workshop_room_token = 0;
 bool g_workshop_room_seen = false;
@@ -279,6 +279,8 @@ void workshop_dispatch_post_update(lua_State* state) {
             ++g_workshop.callback_errors;
         } else {
             ++g_workshop.callback_success;
+            if (cb.callback_id == kWorkshopPostNewRoom)
+                ++g_workshop.room_callback_success;
         }
     }
 }
