@@ -1,7 +1,7 @@
 # IsaacLuaBridge 0.8.0 — experimental Workshop Lua loader
 
 This isolated feature branch adds optional SD-based PC-style Lua mod loading:
-`RegisterMod` + `MC_POST_UPDATE` + `MC_POST_NEW_ROOM` only. Room transitions are detected from the already verified current-room pointer; no new native call or memory write is used. The current, previously verified
+`RegisterMod` + `MC_POST_UPDATE` + candidate `MC_POST_NEW_ROOM`. The room callback is synthesized from changes in an already observed pointer and still needs hardware validation. No new native call or memory write is used. The current, previously verified
 specialized Specialist bridge.lua is preserved but its per-frame callback is paused
 when at least one Workshop callback is enabled, preventing two dance/music
 implementations from running together.
@@ -10,8 +10,7 @@ When `sd:/switch/TheModdingOfIsaac/mods.txt` is missing, **no Workshop scripts
 are loaded**. For an opt-in smoke test install the bundled demo from
 `examples/switch/TheModdingOfIsaac/`.
 
-The read-only Snapshot can report loaded mod count, registered callbacks,
-callback successes and errors. A separate offline catalog enumerates PLT
+The read-only Snapshot reports separate registration counts for update and room events, total callback successes, room callback successes and errors. A successful update callback is confirmed on hardware; room-event timing remains unconfirmed. A separate offline catalog enumerates PLT
 imports, dynamic symbols, BL and BLR instruction sites from the verified
 Repentance.nro for further API reverse-engineering; it does **not** capture
 every live/native function call.
