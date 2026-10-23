@@ -7,7 +7,7 @@ separate MC_POST_UPDATE and MC_POST_NEW_ROOM registration counts, successful
 invocations, room callback invocations, and callback errors. Room pointer based
 event synthesis remains a candidate until confirmed on hardware.
 
-The full **static** catalogue of known Switch Repentance NRO imports, dynamic
+The call table also labels a direct branch's containing caller and, when the exact symbol is available, its target and body offset. One candidate room-transition chain in this exact NRO is `RoomTransition::Update -> RoomTransition::change_room -> Game::ChangeRoom(int,int) -> Level::ChangeRoom(int,int)`. These are static symbol/call-graph observations, not runtime event traces, validated hook sites, or native ABI contracts. Pickup init/update functions also appear as symbols, but virtual/indirect calls remain unresolved.\n\nThe full **static** catalogue of known Switch Repentance NRO imports, dynamic
 symbols, direct BL call sites and indirect BLR sites is generated offline from
 your own exact-hash `Repentance.nro` using
 `isaac-module-snapshot/tools/catalog_nro_calls.py`. This does not trace
