@@ -88,6 +88,10 @@ int lua_set_specialist_music(lua_State* state) {
         g_specialist_music.active=0; g_specialist_music_started=false;
         lua_pushboolean(state,1); return 1;
     }
+    if(manager>UINTPTR_MAX-0x36068) {
+        ++g_specialist_music.errors; g_specialist_music.last_error=3;
+        lua_pushnil(state); lua_pushstring(state,"music object address overflow"); return 2;
+    }
     uintptr_t music=manager+0x36068;
     if(!readable_range(music,0x3E8)) {
         ++g_specialist_music.errors; g_specialist_music.last_error=3;
@@ -143,3 +147,4 @@ int lua_set_specialist_music(lua_State* state) {
     g_specialist_music.active=0; g_specialist_music.last_error=0;
     lua_pushboolean(state,1); return 1;
 }
+
