@@ -1,5 +1,13 @@
 # IsaacLuaBridge 0.7.1 — Specialist correction candidate
 
+Resource correction after the second failed Switch test: cache actor base paths
+must end in `/.`, matching the original cache. GetAbsolutePathFromBasePath splits
+the base with getline and removes its final component. A trailing slash has no
+final empty token, so the old base lost specialist_switch and looked for sheets
+in the parent directory. The resource builder now preserves the folder with the
+dot sentinel. This changes only animations.b; native ELF and PCX sheets are
+unchanged. The separate resource-fix package still needs Switch confirmation.
+
 The user confirmed the 0.6.0 dance, then reported that 0.7.0 displayed a small
 headless body and played no Specialist music. This candidate corrects two
 specific faults found in the exact-build code:

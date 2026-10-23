@@ -1,5 +1,16 @@
 ## 0.7.1 correction after the failed 0.7.0 device test
 
+Subsequent 0.7.1 device report: still no dance, photo shows the small headless
+body. The current startup log proves 0.7.1 and any-pedestal mode were loaded;
+the Snapshot remains old and does not prove current runtime fields. The cache
+base path must use `gfx/characters/specialist_switch/.`. At 0x36288..0x362C0,
+GetAbsolutePathFromBasePath splits the base and pops the last component; split
+uses std::getline at 0x35D34/0x35D6C, which omits a terminal empty component.
+Thus the former trailing slash lost the specialist_switch directory. The dot
+sentinel matches the byte-verified original cache's `gfx\\characters/.` form.
+The resource correction changes only appended actors' base strings and keeps
+all original actors byte-exact. It is a new device-test candidate, not success.
+
 The user observed a headless body and no music. Exact-build assembly shows
 Load resets both animation states. The new reload sequence explicitly calls
 ANM2::Play(const char*,bool) at 0xA1F4 and verifies IsPlaying at 0xA454. These
