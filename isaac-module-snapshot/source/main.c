@@ -195,6 +195,16 @@ static void report_workshop_state(void) {
              " callback_errors=%" PRIu32
              " room_callback_success=%" PRIu32,
              w.callback_success, w.callback_errors, w.room_callback_success);
+    const u32 post_update_success = w.callback_success >= w.room_callback_success
+        ? w.callback_success - w.room_callback_success : 0;
+    const char *update_state = w.registered_post_update == 0 ? "NOT_REGISTERED"
+        : post_update_success > 0 ? "OBSERVED" : "NOT_CONFIRMED";
+    const char *room_state = w.registered_post_new_room == 0 ? "NOT_REGISTERED"
+        : w.room_callback_success > 0 ? "OBSERVED" : "NOT_CONFIRMED";
+    log_line("workshop_post_update_runtime=%s successes=%" PRIu32,
+             update_state, post_update_success);
+    log_line("workshop_post_new_room_runtime=%s successes=%" PRIu32,
+             room_state, w.room_callback_success);
 }
 
 static void report_dance_state(void) {
