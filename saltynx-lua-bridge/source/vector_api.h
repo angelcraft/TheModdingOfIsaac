@@ -1,7 +1,4 @@
 #pragma once
-#include <cmath>
-#include <cstdio>
-
 struct WorkshopVector {
     float x;
     float y;
