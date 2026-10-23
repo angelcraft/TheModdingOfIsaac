@@ -10,6 +10,15 @@ if item_four and item_four.ID == 4 and item_four.Quality == 4 and
 else
     log("Workshop ItemConfig: FAIL (metadata missing or values differ)")
 end
+local function has_quality_four(id)
+    local item = Isaac.GetItemConfig():GetCollectible(id)
+    return item ~= nil and item.Quality == 4
+end
+if has_quality_four(4) and not has_quality_four(502) and not has_quality_four(999) then
+    log("Workshop ItemConfig quality filter: PASS (4 accepted; 502 and unknown rejected)")
+else
+    log("Workshop ItemConfig quality filter: FAIL")
+end
 local post_update_id = ModCallbacks.MC_POST_UPDATE
 local post_new_room_id = ModCallbacks.MC_POST_NEW_ROOM
 local calls = 0

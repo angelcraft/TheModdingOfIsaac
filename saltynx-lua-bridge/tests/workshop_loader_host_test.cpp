@@ -121,7 +121,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    if (!has_trace("Workshop ItemConfig: PASS (id 4 quality 4; id 502 quality 1)")) {
+    if (!has_trace("Workshop ItemConfig quality filter: PASS (4 accepted; 502 and unknown rejected)")) {\n        std::cerr << "Quality-4 filter did not accept/reject expected IDs\\n";\n        lua_close(state);\n        return 1;\n    }\n\n    if (!has_trace("Workshop ItemConfig: PASS (id 4 quality 4; id 502 quality 1)")) {
         std::cerr << "ItemConfig demo did not report expected qualities\\n";
         lua_close(state);
         return 1;

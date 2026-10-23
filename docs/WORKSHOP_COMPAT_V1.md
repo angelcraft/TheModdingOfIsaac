@@ -27,6 +27,8 @@ To enable the demo, copy artifact examples to:
 
 mods.txt must contain one lowercase mod folder id per line. Example: demo.
 The demo also checks `Isaac.GetItemConfig()` during startup and should log `Workshop ItemConfig: PASS (id 4 quality 4; id 502 quality 1)` in `bridge-startup.log` when the metadata file is read correctly.
+
+The Switch log from 2026-10-23 confirms `ItemConfig: loaded 721 collectible qualities` and the demo returned quality 4 for ID 4 and quality 1 for ID 502. The Specialist bridge Lua now queries this same ItemConfig for each pedestal and selects only quality-4 items; the temporary any-pedestal mode and the ID 502 exception are removed. To test legacy Specialist behavior, disable `mods.txt` first: when Workshop callbacks are active, the loader intentionally suppresses the legacy Specialist `on_update` path.
 Without mods.txt, the legacy bridge remains the only Lua script. Maximum 4 mod folders, 32 registered callbacks, 64 KiB per main.lua. The bundled two-mod test mutates one mod's globals and API/library tables, then requires the second mod to log `Workshop isolation: PASS`; Snapshot should show `registered_post_update=2` and `registered_post_new_room=2`.
 Close and restart Isaac fully. Enter a room, let callbacks run, then run the Snapshot 0.8.0 using the existing safe Homebrew method.
 Look for workshop_loaded=1, registered_post_update=1 and increasing workshop_callback_success. In Workshop-only test mode bridge_stage may stay at 4, because the old Specialist on_update callback is intentionally skipped. A real device test has not yet occurred.
