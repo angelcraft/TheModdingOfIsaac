@@ -6,11 +6,15 @@ on:
     paths:
       - "saltynx-lua-bridge/**"
       - "tools/livebridge/**"
+      - "tools/import_workshop_candidate.py"
+      - "tools/test_import_workshop_candidate.py"
       - ".github/workflows/build-saltynx-lua-bridge.yml"
   pull_request:
     paths:
       - "saltynx-lua-bridge/**"
       - "tools/livebridge/**"
+      - "tools/import_workshop_candidate.py"
+      - "tools/test_import_workshop_candidate.py"
       - ".github/workflows/build-saltynx-lua-bridge.yml"
 
 permissions:
@@ -23,6 +27,8 @@ jobs:
       LUA_REF: b1406bb55375787b3559bd1981020541c95a2bee
     steps:
       - uses: actions/checkout@v4
+      - name: Verify Workshop candidate staging
+        run: python3 tools/test_import_workshop_candidate.py -v
       - name: Verify Lua 5.1 coroutine instruction budget
         shell: bash
         run: |
