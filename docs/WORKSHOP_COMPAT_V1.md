@@ -6,7 +6,7 @@
 
 - SaltyNX/SaltySD injects IsaacLuaBridge ELF and hosts Lua 5.1 in the exact verified Switch Repentance NRO.
 - The plugin reads mods.txt plus up to four main.lua files during plugin startup, while SaltySD file IPC is available; no file IPC is used in the game's update callback.
-- The working IsaacUpdate hook calls the original legacy bridge.lua first, then any Workshop MC_POST_UPDATE handlers on the same game update thread.
+- The working IsaacUpdate hook invokes registered Workshop MC_POST_UPDATE handlers on the game update thread. If at least one Workshop callback is registered, it temporarily skips the old Specialist on_update logic to keep the smoke test isolated. Without mod callbacks, legacy behavior is unchanged.
 - A small per-mod global namespace omits io/os/package/debug, but this does NOT establish secure sandboxing: only use mods you trust.
 - The read-only IsaacModuleSnapshot 0.8.0 reads Workshop counts via a versioned witness address written to bridge-startup.log.
 - Audio, animation and sprite assets use Atmosphere LayeredFS. PC Workshop assets are NOT automatically converted or registered by this build.
@@ -26,7 +26,7 @@ To enable the demo, copy artifact examples to:
 mods.txt must contain one lowercase mod folder id per line. Example: demo.
 Without mods.txt, the legacy bridge remains the only Lua script. Maximum 4 mod folders, 32 registered callbacks, 64 KiB per main.lua.
 Close and restart Isaac fully. Enter a room, let callbacks run, then run the Snapshot 0.8.0 using the existing safe Homebrew method.
-Look for workshop_loaded=1, registered_post_update=1 and increasing workshop_callback_success. A real device test has not yet occurred.
+Look for workshop_loaded=1, registered_post_update=1 and increasing workshop_callback_success. In Workshop-only test mode bridge_stage may stay at 4, because the old Specialist on_update callback is intentionally skipped. A real device test has not yet occurred.
 To disable the demo, rename mods.txt; to return fully to a known installation, restore your saved ELF.
 
 ## Supported PC Lua subset in this build
