@@ -1,3 +1,20 @@
+# IsaacModuleSnapshot 0.8.0 — Workshop callback counters
+
+This read-only Snapshot preserves all previous checks and additionally reads
+the optional 0.8.0 Workshop witness when the running bridge advertises
+`bridge_workshop_address`. It records loaded mods, load errors, registered
+MC_POST_UPDATE handlers, successful invocations, and callback errors.
+
+The full **static** catalogue of known Switch Repentance NRO imports, dynamic
+symbols, direct BL call sites and indirect BLR sites is generated offline from
+your own exact-hash `Repentance.nro` using
+`isaac-module-snapshot/tools/catalog_nro_calls.py`. This does not trace
+every call made at runtime or recreate the PC Lua API.
+
+Usage, SD layout and rollback: `docs/WORKSHOP_COMPAT_V1.md`.
+
+---
+
 # IsaacModuleSnapshot 0.4.0 — continuous callback witness
 
 With IsaacLuaBridge 0.4.0 this existing reader also checks the startup runtime
