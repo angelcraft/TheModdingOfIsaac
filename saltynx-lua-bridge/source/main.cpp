@@ -129,6 +129,8 @@ void lua_instruction_limit(lua_State* state, lua_Debug*) {
     luaL_error(state, "IsaacLuaBridge: Lua instruction budget exceeded");
 }
 
+#include "workshop_loader.h"
+
 // These values describe our verified update callback, not Isaac entities.
 int lua_get_frame_count(lua_State* state) {
     lua_pushinteger(state, static_cast<lua_Integer>(g_frame));
@@ -137,7 +139,7 @@ int lua_get_frame_count(lua_State* state) {
 
 int lua_get_runtime_state(lua_State* state) {
     lua_createtable(state, 0, 7);
-    lua_pushliteral(state, "0.7.0");
+    lua_pushliteral(state, "0.8.0-experimental");
     lua_setfield(state, -2, "version");
     lua_pushliteral(state, "91C73FDD575061318D68886316AFEAC72388B2AB");
     lua_setfield(state, -2, "target_build_id");
@@ -245,6 +247,9 @@ bool prepare_lua() {
         return false;
     }
     trace("IsaacLuaBridge: persistent Lua state ready");
+    // Read mod files only during plugin startup when SaltySD file IPC is valid.
+    workshop_register_compat(g_lua);
+    workshop_load_manifest(g_lua);
     return true;
 }
 
@@ -260,27 +265,32 @@ bool resolve_verified_original(uintptr_t return_address) {
 }
 
 void dispatch_lua_update() {
-    if (!g_lua || g_lua_disabled) return;
-    lua_getglobal(g_lua, "on_update");
-    lua_pushinteger(g_lua, static_cast<lua_Integer>(g_frame));
-    __atomic_add_fetch(&g_runtime.attempted, 1u, __ATOMIC_ACQ_REL);
-    lua_sethook(g_lua, lua_instruction_limit, LUA_MASKCOUNT, kLuaInstructionBudget);
-    const int status = lua_pcall(g_lua, 1, 0, 0);
-    lua_sethook(g_lua, nullptr, 0, 0);
-    if (status != 0) {
-        trace(lua_tostring(g_lua, -1));
-        lua_pop(g_lua, 1);
-        __atomic_add_fetch(&g_runtime.failed, 1u, __ATOMIC_ACQ_REL);
-        g_lua_disabled = true;
-        set_stage(9);
-    } else {
-        const u32 successes = __atomic_add_fetch(
-            &g_runtime.succeeded, 1u, __ATOMIC_ACQ_REL);
-        if (successes == 1) {
-            trace("IsaacLuaBridge: first in-game Lua callback completed");
-            set_stage(8);
+    if (!g_lua) return;
+    if (!g_lua_disabled) {
+        lua_getglobal(g_lua, "on_update");
+        lua_pushinteger(g_lua, static_cast<lua_Integer>(g_frame));
+        __atomic_add_fetch(&g_runtime.attempted, 1u, __ATOMIC_ACQ_REL);
+        lua_sethook(g_lua, lua_instruction_limit, LUA_MASKCOUNT, kLuaInstructionBudget);
+        const int status = lua_pcall(g_lua, 1, 0, 0);
+        lua_sethook(g_lua, nullptr, 0, 0);
+        if (status != 0) {
+            trace(lua_tostring(g_lua, -1));
+            lua_pop(g_lua, 1);
+            __atomic_add_fetch(&g_runtime.failed, 1u, __ATOMIC_ACQ_REL);
+            g_lua_disabled = true;
+            set_stage(9);
+        } else {
+            const u32 successes = __atomic_add_fetch(
+                &g_runtime.succeeded, 1u, __ATOMIC_ACQ_REL);
+            if (successes == 1) {
+                trace("IsaacLuaBridge: first in-game Lua callback completed");
+                set_stage(8);
+            }
         }
     }
+    // Workshop callbacks have per-callback failure isolation, independent
+    // of errors in the original Specialist script.
+    workshop_dispatch_post_update(g_lua);
 }
 
 extern "C" void isaac_update_hook() {
@@ -429,7 +439,7 @@ int main(int, char**) {
 
     g_startup_log = SaltySDCore_fopen(
         "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-startup.log", "wb");
-    trace("IsaacLuaBridge 0.7.1: explicit dance playback and guarded music slot 19");
+    trace("IsaacLuaBridge 0.8.0: opt-in Workshop Lua callback loader");
     if (!prepare_lua()) {
         if (g_startup_log) SaltySDCore_fclose(g_startup_log);
         g_startup_log = nullptr;
@@ -475,6 +485,9 @@ int main(int, char**) {
     trace(marker);
     std::snprintf(marker, sizeof(marker), "bridge_music_address=0x%016llX",
                   static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(&g_specialist_music)));
+    trace(marker);
+    std::snprintf(marker, sizeof(marker), "bridge_workshop_address=0x%016llX",
+                  static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(&g_workshop)));
     trace(marker);
     Handle worker = INVALID_HANDLE;
     const Result worker_result = svcCreateThread(
