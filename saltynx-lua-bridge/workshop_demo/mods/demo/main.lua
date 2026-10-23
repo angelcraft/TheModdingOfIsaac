@@ -1,6 +1,8 @@
 -- First half of the two-mod isolation smoke test. Changes here must not leak
 -- into the next mod's globals, standard-library tables or API enum tables.
 local mod = RegisterMod("Workshop Loader Demo", 1)
+if REPENTANCE ~= true then error("Repentance target flag missing") end
+log("Workshop target: Repentance")
 local item_config = Isaac.GetItemConfig()
 local item_four = item_config:GetCollectible(4)
 local item_502 = item_config:GetCollectible(502)

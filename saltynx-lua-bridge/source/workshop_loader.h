@@ -153,7 +153,7 @@ int lua_workshop_require(lua_State* state) {
             relative[out++] = '/';
             segment_has_char = false;
         } else if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                   (c >= '0' && c <= '9') || c == '_' || c == '-') {
+                   (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '+') {
             if (out + 1 >= sizeof(relative))
                 return luaL_error(state, "invalid require module path");
             relative[out++] = c;
@@ -308,6 +308,10 @@ void workshop_load_mod(lua_State* state, const char* id) {
         };
         for (size_t i = 0; i < sizeof(allowed)/sizeof(allowed[0]); ++i)
             workshop_copy_env_value(state, environment_index, allowed[i]);
+        // The verified target executable is Repentance. Mods use this flag to
+        // select their Repentance-specific script paths.
+        lua_pushboolean(state, 1);
+        lua_setfield(state, environment_index, "REPENTANCE");
         // Mod-local require reads dotted module names only during startup,
         // when SaltySD file IPC is available.
         lua_newtable(state);

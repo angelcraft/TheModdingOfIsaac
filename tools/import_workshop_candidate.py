@@ -18,7 +18,7 @@ ALLOWED_CALLBACKS = {"MC_POST_UPDATE", "MC_POST_NEW_ROOM"}
 ALLOWED_ISAAC = {"GetItemConfig"}
 ALLOWED_BRIDGE = {"GetRoomCollectibles", "SetSpecialistDance", "SetSpecialistMusic"}
 IGNORED_FILES = {"main.lua", "metadata.xml", "changelog.txt", "installation.txt"}
-MODULE_SEGMENT = re.compile(r"^[A-Za-z0-9_-]+$")
+MODULE_SEGMENT = re.compile(r"^[A-Za-z0-9_+-]+$")
 REQUIRE_ARGS = re.compile(r"""^\(\s*(['"])([^'"\\]+)\1\s*\)$""")
 REQUIRE_BARE = re.compile(r"""^(['"])([^'"\\]+)\1(?:\s|$)""")
 

@@ -121,6 +121,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    if (!has_trace("Workshop target: Repentance")) {
+        std::cerr << "Repentance compatibility flag was not exposed to Workshop Lua\n";
+        lua_close(state);
+        return 1;
+    }
+
     if (!has_trace("Workshop modules: PASS (dotted require, private environment, per-mod cache)")) {
         std::cerr << "Local Lua module loading/cache mismatch\n";
         lua_close(state);

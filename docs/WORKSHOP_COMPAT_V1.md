@@ -93,7 +93,7 @@ Do not invoke all callback IDs with fabricated parameters. That would only exerc
 - mod:AddCallback(ModCallbacks.MC_POST_UPDATE, fn)
 - mod:AddCallback(ModCallbacks.MC_POST_NEW_ROOM, fn) (candidate room-transition signal; not yet confirmed on hardware)
 - Basic Lua 5.1 functions and math/string/table/coroutine libraries.
-- Startup-only local `require("folder.module")` resolving to `<mod folder>/folder/module.lua`. It is not Lua's `package` loader and does not provide built-in `json`.
+- Startup-only local `require("folder.module")` resolving to `<mod folder>/folder/module.lua`, including safe filename characters such as `+`. The per-mod environment sets `REPENTANCE=true` so conditional Workshop scripts select their Repentance path. It is not Lua's `package` loader and does not provide built-in `json`.
 - `Isaac.GetItemConfig():GetCollectible(id)` with exact `ID` and `Quality` loaded from `sd:/switch/TheModdingOfIsaac/items_metadata.xml`; absent/unknown entries return `nil`, and localized names are not fabricated.
 - Existing IsaacBridge functions still exist, but they are NOT PC Isaac functions.
 
