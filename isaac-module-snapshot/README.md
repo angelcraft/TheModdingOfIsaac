@@ -3,7 +3,7 @@
 This read-only Snapshot preserves all previous checks and additionally reads
 the optional 0.8.0 Workshop witness when the running bridge advertises
 `bridge_workshop_address`. It records loaded mods, load errors, registered
-MC_POST_UPDATE handlers, successful invocations, and callback errors.
+MC_POST_UPDATE handlers, successful invocations, room callback invocations, and callback errors.
 
 The full **static** catalogue of known Switch Repentance NRO imports, dynamic
 symbols, direct BL call sites and indirect BLR sites is generated offline from
