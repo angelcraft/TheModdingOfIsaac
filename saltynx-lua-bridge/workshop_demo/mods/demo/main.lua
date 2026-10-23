@@ -3,6 +3,16 @@
 local mod = RegisterMod("Workshop Loader Demo", 1)
 if REPENTANCE ~= true then error("Repentance target flag missing") end
 log("Workshop target: Repentance")
+local vector = Vector(3, 4)
+local rotated = Vector(1, 0):Rotated(90)
+local direction = Vector.FromAngle(90)
+if vector.X == 3 and vector.Y == 4 and vector:Length() == 5 and
+   math.abs(rotated.X) < 0.00001 and math.abs(rotated.Y - 1) < 0.00001 and
+   math.abs(direction.X) < 0.00001 and math.abs(direction.Y - 1) < 0.00001 then
+    log("Workshop Vector: PASS (constructor, components, length, rotation)")
+else
+    log("Workshop Vector: FAIL")
+end
 local item_config = Isaac.GetItemConfig()
 local item_four = item_config:GetCollectible(4)
 local item_502 = item_config:GetCollectible(502)
