@@ -11,6 +11,9 @@ local QUALITY_4 = {
 -- Item 502 is the known in-game pedestal used to verify the dance.
 -- Keep it enabled as a dedicated test case even if its metadata quality differs.
 local TEST_PEDESTAL_ID = 502
+-- Temporary Switch test mode: disable this to restore quality-4/502 selection.
+local TEST_ANY_PEDESTAL = true
+if TEST_ANY_PEDESTAL then log('Specialist TEST: any collectible pedestal; quality ignored') end
 local previous, last_error, active_item = nil, nil, nil
 local music_error = nil
 function on_update(frame)
@@ -19,7 +22,9 @@ function on_update(frame)
     local selected = nil
     if room and room.in_run then
         for _, id in ipairs(room.items) do
-            if QUALITY_4[id] or id == TEST_PEDESTAL_ID then selected = id; break end
+            if id > 0 and (TEST_ANY_PEDESTAL or QUALITY_4[id] or id == TEST_PEDESTAL_ID) then
+                selected = id; break
+            end
         end
     end
     local should_dance = selected ~= nil
@@ -40,10 +45,9 @@ function on_update(frame)
         music_error = nil
     end
     if previous ~= should_dance then
-        log(should_dance and ('Specialist ON: test pedestal ' .. tostring(selected)) or 'Specialist OFF: no quality 4 or test pedestal')
+        log(should_dance and ('Specialist ON: pedestal ' .. tostring(selected)) or 'Specialist OFF: no qualifying pedestal')
         previous = should_dance
     end
     active_item = selected
 end
-
 
