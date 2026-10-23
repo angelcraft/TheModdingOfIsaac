@@ -31,22 +31,50 @@ To disable the demo, rename mods.txt; to return fully to a known installation, r
 
 ## Specialist event and API inventory
 
-The bundled PC Workshop source registers these six callbacks:
+This inventory comes from the user's local original Workshop `main.lua`; the proprietary Workshop source and assets are not copied into this repository. It registers six event IDs:
 
-| Callback | Use in Specialist | Bridge status |
+| Event | What the original handler does | Loader status |
 | --- | --- | --- |
-| MC_POST_UPDATE | Scans room pickups and runs the eligibility/dance logic | Registered by the bridge; smoke test confirmed, Specialist path is not wired to PC APIs |
-| MC_POST_NEW_ROOM | Resets item-count state and removes the costume | Candidate synthesized from room-pointer changes; device behavior not confirmed |
-| MC_USE_ITEM | Runs room cleanup after item use | Unsupported |
-| MC_USE_CARD | Runs room cleanup after card use | Unsupported |
-| MC_POST_GAME_STARTED | Loads saved settings | Unsupported |
-| MC_PRE_GAME_EXIT | Saves settings | Unsupported |
+| `MC_POST_UPDATE` | Counts collectible pedestals and runs eligibility/dance logic when the count changes | Registered and dispatched every update; hardware evidence exists for the earlier single-mod demo, not for this current two-mod build or for unmodified Specialist |
+| `MC_POST_NEW_ROOM` | Resets the pedestal count and removes the dance costume | Registered, but synthesized from a room-pointer change; exact timing and device behavior remain unverified |
+| `MC_USE_ITEM` | Re-scans after an active item is used | Unsupported |
+| `MC_USE_CARD` | Re-scans after a card is used | Unsupported |
+| `MC_POST_GAME_STARTED` | Loads saved configuration | Unsupported |
+| `MC_PRE_GAME_EXIT` | Saves configuration | Unsupported |
 
-Specialist's callbacks are declared as methods (for example, `function Epic:OnGameUpdate()`) and are passed to `AddCallback` as `Epic.OnGameUpdate`. The bridge therefore supplies the mod table as the callback's first argument. The demo checks this contract.
+The original declares handlers with colon syntax, such as `function Epic:OnGameUpdate()`, and registers the resulting functions as `Epic.OnGameUpdate`. The loader stores the mod table and supplies it as argument 1 (the Lua `self`). That narrow calling convention is implemented. The start/exit callbacks also need their expected lifecycle and event arguments; they are not made compatible just by accepting their IDs.
 
-Do not call every callback ID with fabricated parameters. That would test our Lua dispatcher, not establish that the game's event maps to that callback or that its arguments are correct. Extend the probe by registering one event at a time, observing independent Snapshot counters during the corresponding natural in-game action, and checking callback arguments against the PC source/API contract. Unknown event IDs stay unsupported until there is a verified trigger and signature.
+### Original Specialist API requirements
 
-Before Specialist can work unchanged, its source also needs APIs absent from this prototype, including room entity enumeration and classification, collectible config/quality, costume-path lookup and application, music lookup/playback/restore, save-data methods, `require("json")`, and globals such as `Vector`, `PlayerType`, `EntityPartition`, and `PickupVariant`. Implementing callbacks alone is insufficient.
+| Original API or value | Use in the source | Current 0.8.0 status |
+| --- | --- | --- |
+| `RegisterMod(name, 1)`, `mod:AddCallback(id, fn)` | Create `Epic`; register handlers | Narrow subset implemented. Callback methods receive the mod table as `self`. |
+| `Game()` | Cached as `game` | Unsupported; no game object is exposed |
+| `game:GetNumPlayers()`, `game:GetPlayer(index)` | Apply/remove costumes and choose character music | Unsupported |
+| `player:GetPlayerType()`, `GetCollectibleNum(id, true)` | Character selection and item-costume checks | Unsupported |
+| `player:AddNullCostume(id)`, `TryRemoveNullCostume(id)` | Start/stop the dance and item costume | Unsupported; animation must be applied using verified player/costume behavior |
+| `game:GetRoom()`, `room:GetType()`, `room:PlayMusic()` | Treasure-room blind-item exception; restore room music | Unsupported |
+| `game:GetLevel():GetStageType()`, `GetCurses()` | Repentance-stage and Curse of the Blind checks | Unsupported |
+| `Isaac.FindInRadius(Vector(...), radius, EntityPartition.PICKUP)` | Enumerate pickups in the room | Unsupported; the current custom pedestal reader is not the PC entity-enumeration API |
+| Entity `Variant`, `SubType`, `Position` | Filter collectible pedestals and test alt-path visibility | Unsupported as PC-compatible entity objects |
+| `PickupVariant.PICKUP_COLLECTIBLE`, `EntityPartition.PICKUP` | Pickup filtering and search mask | Unsupported |
+| `Isaac.GetItemConfig():GetCollectible(id)`, item `Name` and `Quality` | Quality threshold and saved per-item overrides | Unsupported |
+| `CollectibleType.NUM_COLLECTIBLES` | Bound a config scan | Unsupported |
+| `Isaac.GetCostumeIdByPath(path)` | Resolve the character/item `.anm2` costume | Unsupported; LayeredFS asset installation is a separate requirement |
+| `Isaac.GetMusicIdByName(name)` | Resolve base and character-specific songs | Unsupported |
+| `MusicManager():GetCurrentMusicID()`, `Play(id, 1)`, `UpdateVolume()` | Replace current track and adjust volume | Unsupported; no compatible music manager is exposed |
+| `require("json")`, `json.encode/decode` | Serialize saved settings and item overrides | Unsupported |
+| `Epic:HasData()`, `LoadData()`, `SaveData(data)` | Persist configuration across runs | Unsupported |
+| `PlayerType.*`, `StageType.STAGETYPE_REPENTANCE`, `RoomType.ROOM_TREASURE` | Character/stage/room branches | Unsupported constants |
+| `Vector(x, y)` | Search origin and position comparisons | Unsupported |
+
+The source also uses standard Lua libraries (`pairs`, `ipairs`, `table.insert`, `math.random`, `tostring`) and optional `ModConfigMenu`. The base-library calls are not Isaac bindings; the settings UI is optional, but `require("json")` is unconditional.
+
+### What the bridge actually exposes
+
+The prototype implements `RegisterMod`, `mod:AddCallback`, the two callback constants above, Lua 5.1 base libraries, and a custom `IsaacBridge` table. Its `GetRoomCollectibles`, `SetSpecialistDance`, and `SetSpecialistMusic` functions are project-specific helpers, not substitutes for the PC `Game`, `Isaac`, `EntityPlayer`, config, or `MusicManager` APIs. In Workshop mode the legacy Specialist script's `on_update` is skipped while any Workshop callback is registered, so the PC `main.lua` is not currently running alongside those helpers.
+
+Do not invoke all callback IDs with fabricated parameters. That would only exercise our dispatcher and could call handlers in invalid game states. Add events one at a time, then count their natural trigger on-device and validate callback arguments against the PC API contract. Keep unsupported IDs unavailable until both trigger and argument behavior are known.
 
 ## Supported PC Lua subset in this build
 
