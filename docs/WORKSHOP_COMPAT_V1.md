@@ -7,7 +7,7 @@
 - SaltyNX/SaltySD injects IsaacLuaBridge ELF and hosts Lua 5.1 in the exact verified Switch Repentance NRO.
 - The plugin reads mods.txt plus up to four main.lua files during plugin startup, while SaltySD file IPC is available; no file IPC is used in the game's update callback.
 - The working IsaacUpdate hook invokes registered Workshop handlers on the game update thread. MC_POST_NEW_ROOM is currently a candidate synthesized from a change in the already observed room pointer; its timing and reliability still require device validation. No new native call or memory write is used. The Snapshot reports registrations and successes separately for each implemented event. If at least one Workshop callback is registered, it temporarily skips the old Specialist on_update logic to keep the smoke test isolated. Without mod callbacks, legacy behavior is unchanged.
-- A small per-mod global namespace omits io/os/package/debug, but this does NOT establish secure sandboxing: only use mods you trust.
+- Each mod gets a distinct `_G` plus shallow copies of mutable `math`, `string`, `table`, `coroutine`, `ModCallbacks`, and `IsaacBridge` tables. Lua functions and VM-level state such as the pseudorandom generator remain shared; this is namespace separation, NOT a secure sandbox. Only use mods you trust.
 - The read-only IsaacModuleSnapshot 0.8.0 reads Workshop counts via a versioned witness address written to bridge-startup.log.
 - Audio, animation and sprite assets use Atmosphere LayeredFS. PC Workshop assets are NOT automatically converted or registered by this build.
 
@@ -24,7 +24,7 @@ To enable the demo, copy artifact examples to:
     sd:/switch/TheModdingOfIsaac/mods/demo/main.lua
 
 mods.txt must contain one lowercase mod folder id per line. Example: demo.
-Without mods.txt, the legacy bridge remains the only Lua script. Maximum 4 mod folders, 32 registered callbacks, 64 KiB per main.lua.
+Without mods.txt, the legacy bridge remains the only Lua script. Maximum 4 mod folders, 32 registered callbacks, 64 KiB per main.lua. The bundled two-mod test mutates one mod's globals and API/library tables, then requires the second mod to log `Workshop isolation: PASS`; Snapshot should show `registered_post_update=2` and `registered_post_new_room=2`.
 Close and restart Isaac fully. Enter a room, let callbacks run, then run the Snapshot 0.8.0 using the existing safe Homebrew method.
 Look for workshop_loaded=1, registered_post_update=1 and increasing workshop_callback_success. In Workshop-only test mode bridge_stage may stay at 4, because the old Specialist on_update callback is intentionally skipped. A real device test has not yet occurred.
 To disable the demo, rename mods.txt; to return fully to a known installation, restore your saved ELF.
