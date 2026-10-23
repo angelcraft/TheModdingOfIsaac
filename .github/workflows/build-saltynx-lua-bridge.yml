@@ -6,17 +6,58 @@ on:
     paths:
       - "saltynx-lua-bridge/**"
       - "tools/livebridge/**"
+      - "tools/import_workshop_candidate.py"
+      - "tools/test_import_workshop_candidate.py"
       - ".github/workflows/build-saltynx-lua-bridge.yml"
   pull_request:
     paths:
       - "saltynx-lua-bridge/**"
       - "tools/livebridge/**"
+      - "tools/import_workshop_candidate.py"
+      - "tools/test_import_workshop_candidate.py"
       - ".github/workflows/build-saltynx-lua-bridge.yml"
 
 permissions:
   contents: read
 
 jobs:
+  coroutine-budget-test:
+    runs-on: ubuntu-latest
+    env:
+      LUA_REF: b1406bb55375787b3559bd1981020541c95a2bee
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Workshop candidate staging
+        run: python3 tools/test_import_workshop_candidate.py -v
+      - name: Verify Lua 5.1 coroutine instruction budget
+        shell: bash
+        run: |
+          set -euo pipefail
+          LUA_DIR="$RUNNER_TEMP/lua51-switch"
+          git clone --quiet https://github.com/carstene1ns/lua51-switch.git "$LUA_DIR"
+          git -C "$LUA_DIR" checkout --quiet "$LUA_REF"
+          make -C "$LUA_DIR/src" clean linux CC=gcc AR="ar rcu" RANLIB=ranlib
+          gcc -std=c99 -Wall -Wextra -Werror \
+            -I"$LUA_DIR/src" \
+            "$GITHUB_WORKSPACE/saltynx-lua-bridge/tests/coroutine_instruction_budget.c" \
+            "$LUA_DIR/src/liblua.a" -lm -ldl \
+            -o "$RUNNER_TEMP/coroutine_instruction_budget"
+          "$RUNNER_TEMP/coroutine_instruction_budget"
+          g++ -std=c++17 -Wall -Wextra -Werror \
+            -I"$LUA_DIR/src" \
+            "$GITHUB_WORKSPACE/saltynx-lua-bridge/tests/protected_call_budget.cpp" \
+            "$LUA_DIR/src/liblua.a" -lm -ldl \
+            -o "$RUNNER_TEMP/protected_call_budget"
+          timeout 10s "$RUNNER_TEMP/protected_call_budget"
+          g++ -std=c++17 -Wall -Wextra -Werror \
+            -I"$LUA_DIR/src" \
+            -I"$GITHUB_WORKSPACE/saltynx-lua-bridge/source" \
+            "$GITHUB_WORKSPACE/saltynx-lua-bridge/tests/workshop_loader_host_test.cpp" \
+            "$LUA_DIR/src/liblua.a" -lm -ldl \
+            -o "$RUNNER_TEMP/workshop_loader_host_test"
+          "$RUNNER_TEMP/workshop_loader_host_test" \
+            "$GITHUB_WORKSPACE/saltynx-lua-bridge/workshop_demo"
+
   build:
     runs-on: ubuntu-latest
     container: devkitpro/devkita64:20240202
@@ -50,7 +91,15 @@ jobs:
           cp "$DEPS/NX-FPS/IsaacLuaBridge.elf" "$ROOT/dist/SaltySD/plugins/010021C000B6A000/"
           cp "$ROOT/bridge.lua" "$ROOT/dist/SaltySD/plugins/010021C000B6A000/"
           cp "$ROOT/README.md" "$ROOT/dist/"
-          printf 'version=0.7.1\nsource_commit=%s\nstable_0_3_8=103e5e4563f475bad318241b3bc5fb5c1544f758\nstable_0_6_0=cf8c5f8e8a35fda44f638e3d5120fab0afaf6da9\n' "$GITHUB_SHA" > "$ROOT/dist/BUILD.txt"
+          mkdir -p "$ROOT/dist/examples/switch/TheModdingOfIsaac/mods/demo"
+          mkdir -p "$ROOT/dist/examples/switch/TheModdingOfIsaac/mods/isolation"
+          cp "$ROOT/workshop_demo/mods.txt" "$ROOT/dist/examples/switch/TheModdingOfIsaac/mods.txt"
+          cp "$ROOT/workshop_demo/mods/demo/main.lua" "$ROOT/dist/examples/switch/TheModdingOfIsaac/mods/demo/main.lua"
+          mkdir -p "$ROOT/dist/examples/switch/TheModdingOfIsaac/mods/demo/helpers"
+          cp "$ROOT/workshop_demo/mods/demo/helpers/quality_filter.lua" "$ROOT/dist/examples/switch/TheModdingOfIsaac/mods/demo/helpers/quality_filter.lua"
+          cp "$ROOT/workshop_demo/mods/isolation/main.lua" "$ROOT/dist/examples/switch/TheModdingOfIsaac/mods/isolation/main.lua"
+          cp "$GITHUB_WORKSPACE/docs/WORKSHOP_COMPAT_V1.md" "$ROOT/dist/WORKSHOP_COMPAT_V1.md"
+          printf 'version=0.8.1-experimental\nsource_commit=%s\nstable_0_3_8=103e5e4563f475bad318241b3bc5fb5c1544f758\nstable_0_6_0=cf8c5f8e8a35fda44f638e3d5120fab0afaf6da9\n' "$GITHUB_SHA" > "$ROOT/dist/BUILD.txt"
           cd "$ROOT/dist"
           sha256sum SaltySD/plugins/010021C000B6A000/* > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4

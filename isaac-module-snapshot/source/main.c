@@ -60,6 +60,7 @@ static u64 g_bridge_runtime_address;
 static u64 g_bridge_pedestal_address;
 static u64 g_bridge_dance_address;
 static u64 g_bridge_music_address;
+static u64 g_bridge_workshop_address;
 static bool g_bridge_hook_observed;
 static bool g_unexpected_bindings;
 
@@ -115,6 +116,8 @@ static void load_bridge_marker(void) {
             g_bridge_dance_address = parsed;
         else if (sscanf(line, "bridge_music_address=0x%" SCNx64, &parsed) == 1)
             g_bridge_music_address = parsed;
+        else if (sscanf(line, "bridge_workshop_address=0x%" SCNx64, &parsed) == 1)
+            g_bridge_workshop_address = parsed;
     }
     fclose(file);
     log_line("bridge_marker=%s", (g_bridge_stage_address && g_bridge_hook_address)
@@ -154,6 +157,54 @@ static void report_runtime_counters(void) {
     } else {
         log_line("bridge_continuous=NOT_CONFIRMED");
     }
+}
+
+/* Read-only Workshop mod callback witness. A snapshot cannot reconstruct every
+ * native call made by the game; this describes only callbacks registered with
+ * our bridge. For complete static PLT/symbol/BL inventories use the offline
+ * NRO catalog generator (no game binaries are uploaded). */
+static void report_workshop_state(void) {
+    if (!g_bridge_workshop_address) {
+        log_line("workshop=unavailable (old bridge or no marker)");
+        return;
+    }
+    struct { u32 magic, version, loaded, errors, callback_success,
+                 callback_errors, registered_post_update, registered_post_new_room,
+                 room_callback_success; } w = {0};
+    _Static_assert(sizeof(w) == 36, "Workshop witness layout");
+    MemoryInfo m = {0};
+    Result rc = cheat_query(&m, g_bridge_workshop_address);
+    if (R_FAILED(rc) || !(m.perm & Perm_R) ||
+        m.addr > g_bridge_workshop_address ||
+        g_bridge_workshop_address - m.addr > m.size ||
+        sizeof(w) > m.size - (g_bridge_workshop_address - m.addr)) {
+        log_line("workshop=unknown (unreadable memory)");
+        return;
+    }
+    rc = cheat_read(g_bridge_workshop_address, &w, sizeof(w));
+    if (R_FAILED(rc) || w.magic != 0x574D4431u || w.version != 2u) {
+        log_line("workshop=unknown (signature mismatch)");
+        return;
+    }
+    log_line("workshop_loaded=%" PRIu32 " load_errors=%" PRIu32,
+             w.loaded, w.errors);
+    log_line("workshop_registered_post_update=%" PRIu32
+             " registered_post_new_room=%" PRIu32,
+             w.registered_post_update, w.registered_post_new_room);
+    log_line("workshop_callback_success=%" PRIu32
+             " callback_errors=%" PRIu32
+             " room_callback_success=%" PRIu32,
+             w.callback_success, w.callback_errors, w.room_callback_success);
+    const u32 post_update_success = w.callback_success >= w.room_callback_success
+        ? w.callback_success - w.room_callback_success : 0;
+    const char *update_state = w.registered_post_update == 0 ? "NOT_REGISTERED"
+        : post_update_success > 0 ? "OBSERVED" : "NOT_CONFIRMED";
+    const char *room_state = w.registered_post_new_room == 0 ? "NOT_REGISTERED"
+        : w.room_callback_success > 0 ? "OBSERVED" : "NOT_CONFIRMED";
+    log_line("workshop_post_update_runtime=%s successes=%" PRIu32,
+             update_state, post_update_success);
+    log_line("workshop_post_new_room_runtime=%s successes=%" PRIu32,
+             room_state, w.room_callback_success);
 }
 
 static void report_dance_state(void) {
@@ -628,6 +679,7 @@ static bool take_snapshot(void) {
     const bool snapshot_ok = snapshot_mappings(&readable_regions, &nro_regions);
     // Inspect callback state even if a later, unrelated observation failed.
     report_bridge_stage();
+    report_workshop_state();
     if (!snapshot_ok) return false;
     rc = cheat_metadata(&after);
     if (R_FAILED(rc)) return fail_result("read final process metadata", rc);
@@ -656,7 +708,7 @@ static bool prepare_log(void) {
         printf("Cannot open log (errno %d).\n", errno);
         return false;
     }
-    log_line("IsaacModuleSnapshot 0.7.0 - Specialist quality, character and music witnesses");
+    log_line("IsaacModuleSnapshot 0.8.0 - Workshop callbacks and native module witnesses");
     log_line("observation=bounded executable headers; game memory is never written");
     return true;
 }

@@ -1,0 +1,228 @@
+#include <cstdint>
+#include <cstdio>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+#include <string>
+#include <vector>
+
+extern "C" {
+#include <lua.h>
+#include <lauxlib.h>
+#include <lualib.h>
+}
+
+using u32 = std::uint32_t;
+using u64 = std::uint64_t;
+constexpr int kLuaInstructionBudget = 100000;
+
+static std::string g_test_root;
+static std::vector<std::string> g_trace;
+static uintptr_t g_room_token = 0x1234;
+
+static void trace(const char* message) {
+    const std::string text = message ? message : "(null)";
+    g_trace.push_back(text);
+    std::cout << text << '\n';
+}
+
+static int host_log(lua_State* state) {
+    trace(luaL_checkstring(state, 1));
+    return 0;
+}
+
+#include "../source/lua_budget.h"
+
+static bool read_current_room_token(uintptr_t& token) {
+    token = g_room_token;
+    return true;
+}
+
+static std::string map_sd_path(const char* path) {
+    static const char prefix[] = "sdmc:/switch/TheModdingOfIsaac/";
+    const std::string input(path ? path : "");
+    if (input.compare(0, sizeof(prefix) - 1, prefix) != 0) return {};
+    return g_test_root + "/" + input.substr(sizeof(prefix) - 1);
+}
+
+static FILE* SaltySDCore_fopen(const char* path, const char* mode) {
+    const std::string mapped = map_sd_path(path);
+    return mapped.empty() ? nullptr : std::fopen(mapped.c_str(), mode);
+}
+static int SaltySDCore_fseek(FILE* file, std::int64_t offset, int origin) {
+    return fseeko(file, static_cast<off_t>(offset), origin);
+}
+static std::int64_t SaltySDCore_ftell(FILE* file) {
+    return static_cast<std::int64_t>(ftello(file));
+}
+static std::size_t SaltySDCore_fread(void* buffer, std::size_t size,
+                                     std::size_t count, FILE* file) {
+    return std::fread(buffer, size, count, file);
+}
+static int SaltySDCore_fclose(FILE* file) {
+    return std::fclose(file);
+}
+
+#include "../source/workshop_loader.h"
+#include "../source/item_config.h"
+#include "../source/vector_api.h"
+
+static bool has_trace(const char* expected) {
+    for (const auto& line : g_trace)
+        if (line == expected) return true;
+    return false;
+}
+
+int main(int argc, char** argv) {
+    if (argc != 2) {
+        std::cerr << "usage: workshop_loader_host_test <workshop_demo_root>\n";
+        return 2;
+    }
+    g_test_root = argv[1];
+
+    lua_State* state = luaL_newstate();
+    if (!state) {
+        std::cerr << "could not create Lua state\n";
+        return 2;
+    }
+    luaL_openlibs(state);
+    lua_register(state, "log", host_log);
+    lua_newtable(state);
+    lua_setglobal(state, "IsaacBridge");
+    workshop_register_compat(state);
+    register_item_config_api(state);
+    register_vector_api(state);
+    if (luaL_dostring(state,
+        "assert(ModCallbacks.MC_POST_UPDATE == 1); "
+        "assert(ModCallbacks.MC_POST_NEW_ROOM == 19)") != 0) {
+        std::cerr << "PC callback numeric identifiers mismatch\n";
+        lua_close(state);
+        return 1;
+    }
+    if (luaL_dostring(state,
+        "local v = Vector(3, 4); assert(v.X == 3 and v.Y == 4); "
+        "assert(v:Length() == 5 and v:LengthSquared() == 25); "
+        "assert((v + Vector(1, 2)) == Vector(4, 6)); "
+        "assert((2 * Vector(2, 3)) == Vector(4, 6)); "
+        "assert(v:Dot(Vector(2, 1)) == 10); "
+        "assert(v:Distance(Vector(0, 0)) == 5); "
+        "assert(Vector.Distance(v, Vector(0, 0)) == 5); "
+        "assert(Vector.DistanceSquared(v, Vector(0, 0)) == 25); "
+        "local mid = Vector.Lerp(Vector(0, 0), Vector(10, 10), 0.25); "
+        "assert(mid == Vector(2.5, 2.5)); "
+        "local d = Vector.FromAngle(90); assert(math.abs(d.X) < 0.00001 and math.abs(d.Y - 1) < 0.00001); "
+        "local unit = v:Normalized(); assert(math.abs(unit:Length() - 1) < 0.00001); "
+        "v.X = 6; assert(v.X == 6); "
+        "local r = Vector(1, 0):Rotated(90); assert(math.abs(r.X) < 0.00001 and math.abs(r.Y - 1) < 0.00001)") != 0) {
+        std::cerr << "Vector API behavior mismatch: " << lua_tostring(state, -1) << '\n';
+        lua_close(state);
+        return 1;
+    }
+    lua_newtable(state);
+    const int vector_env = lua_gettop(state);
+    workshop_copy_env_value(state, vector_env, "Vector");
+    workshop_copy_env_value(state, vector_env, "assert");
+    workshop_copy_env_value(state, vector_env, "math");
+    workshop_copy_env_value(state, vector_env, "pcall");
+    workshop_copy_env_value(state, vector_env, "xpcall");
+    lua_getfield(state, vector_env, "pcall");
+    const bool guarded_pcall = lua_tocfunction(state, -1) == lua_guarded_pcall;
+    lua_pop(state, 1);
+    lua_getfield(state, vector_env, "xpcall");
+    const bool guarded_xpcall = lua_tocfunction(state, -1) == lua_guarded_xpcall;
+    lua_pop(state, 1);
+    if (!guarded_pcall || !guarded_xpcall) {
+        std::cerr << "mod environment exposes unguarded protected calls\n";
+        lua_close(state);
+        return 1;
+    }
+    if (luaL_loadstring(state,
+        "local v = Vector(3, 4); assert(v:Length() == 5); "
+        "assert(Vector.FromAngle(0).X == 1)") != 0) {
+        std::cerr << "could not compile isolated Vector check: " << lua_tostring(state, -1) << '\n';
+        lua_close(state);
+        return 1;
+    }
+    lua_pushvalue(state, vector_env);
+    lua_setfenv(state, -2);
+    if (lua_pcall(state, 0, 0, 0) != 0) {
+        std::cerr << "isolated Vector API mismatch: " << lua_tostring(state, -1) << '\n';
+        lua_close(state);
+        return 1;
+    }
+    lua_pop(state, 1);
+    trace("Workshop Vector: PASS (math, operators, mutable components, isolated constructor)");
+    if (luaL_dostring(state,
+        "local c = Isaac.GetItemConfig(); "
+        "local hi = c:GetCollectible(4); "
+        "assert(hi and hi.ID == 4 and hi.Quality == 4); "
+        "local lo = Isaac.GetItemConfig().GetCollectible(502); "
+        "assert(lo and lo.Quality == 1); "
+        "assert(c:GetCollectible(999) == nil)") != 0) {
+        std::cerr << "ItemConfig metadata/API mismatch: " << lua_tostring(state, -1) << '\n';
+        lua_close(state);
+        return 1;
+    }
+
+    workshop_load_manifest(state);
+    if (g_workshop.loaded != 2 || g_workshop.errors != 0 ||
+        g_workshop.registered_post_update != 2 ||
+        g_workshop.registered_post_new_room != 2) {
+        std::cerr << "manifest/registration mismatch: loaded=" << g_workshop.loaded
+                  << " errors=" << g_workshop.errors
+                  << " post_update=" << g_workshop.registered_post_update
+                  << " new_room=" << g_workshop.registered_post_new_room << '\n';
+        lua_close(state);
+        return 1;
+    }
+    if (!has_trace("Workshop isolation: PASS (globals, libraries, API tables)")) {
+        std::cerr << "second mod did not see isolated environment\n";
+        lua_close(state);
+        return 1;
+    }
+
+    if (!has_trace("Workshop target: Repentance")) {
+        std::cerr << "Repentance compatibility flag was not exposed to Workshop Lua\n";
+        lua_close(state);
+        return 1;
+    }
+
+    if (!has_trace("Workshop modules: PASS (dotted require, private environment, per-mod cache)")) {
+        std::cerr << "Local Lua module loading/cache mismatch\n";
+        lua_close(state);
+        return 1;
+    }
+
+    if (!has_trace("Workshop ItemConfig quality filter: PASS (4 accepted; 502 and unknown rejected)")) {
+        std::cerr << "Quality-4 filter did not accept/reject expected IDs\n";
+        lua_close(state);
+        return 1;
+    }
+
+    if (!has_trace("Workshop ItemConfig: PASS (id 4 quality 4; id 502 quality 1)")) {
+        std::cerr << "ItemConfig demo did not report expected qualities\\n";
+        lua_close(state);
+        return 1;
+    }
+
+    workshop_dispatch_post_update(state);
+    if (g_workshop.callback_errors != 0 || g_workshop.callback_success != 4 ||
+        g_workshop.room_callback_success != 2 ||
+        !has_trace("Workshop demo: callback mod argument OK") ||
+        !has_trace("Workshop isolation: callback argument OK") ||
+        !has_trace("Workshop demo: MC_POST_NEW_ROOM callback with mod argument") ||
+        !has_trace("Workshop isolation: MC_POST_NEW_ROOM callback")) {
+        std::cerr << "callback dispatch/isolation mismatch: success="
+                  << g_workshop.callback_success << " errors="
+                  << g_workshop.callback_errors << " room_success="
+                  << g_workshop.room_callback_success << '\n';
+        lua_close(state);
+        return 1;
+    }
+
+    lua_close(state);
+    std::cout << "Workshop loader host integration: PASS (2 mods, isolated state, "
+                 "4 callbacks, mod self argument)\n";
+    return 0;
+}

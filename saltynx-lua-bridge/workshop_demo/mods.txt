@@ -1,0 +1,3 @@
+# Enable lowercase mod folder IDs, one per line.
+demo
+isolation

@@ -1,3 +1,27 @@
+# IsaacLuaBridge 0.8.0 — experimental Workshop Lua loader
+
+This isolated feature branch adds optional SD-based PC-style Lua mod loading:
+`RegisterMod` + `MC_POST_UPDATE` + candidate `MC_POST_NEW_ROOM`. The room callback is synthesized from changes in an already observed pointer and still needs hardware validation. No new native call or memory write is used. The current, previously verified
+specialized Specialist bridge.lua is preserved but its per-frame callback is paused
+when at least one Workshop callback is enabled, preventing two dance/music
+implementations from running together.
+
+When `sd:/switch/TheModdingOfIsaac/mods.txt` is missing, **no Workshop scripts
+are loaded**. For an opt-in smoke test install the bundled demo from
+`examples/switch/TheModdingOfIsaac/`.
+
+A partial `Isaac.GetItemConfig():GetCollectible(id)` API reads the user's extracted `items_metadata.xml` from `sd:/switch/TheModdingOfIsaac/items_metadata.xml` at plugin startup and exposes exact `ID` and `Quality` fields. Missing or invalid metadata returns `nil`; localized `Name` is not fabricated. The XML stays on the user's SD and is not included in the repository/package. Host integration coverage exists; Switch validation is still required.
+
+The read-only Snapshot reports separate registration counts for update and room events, total callback successes, room callback successes and errors. The bundled two-mod smoke test also checks that a mod's globals and mutable library/API tables do not leak into the next mod; it should log `Workshop isolation: PASS` and report two registrations per supported event. A successful update callback is confirmed on hardware; room-event timing remains unconfirmed. A separate offline catalog enumerates PLT
+imports, dynamic symbols, BL and BLR instruction sites from the verified
+Repentance.nro for further API reverse-engineering; it does **not** capture
+every live/native function call.
+
+**Not yet tested on hardware; original Specialist Workshop Lua does not work
+unmodified.** See `docs/WORKSHOP_COMPAT_V1.md` for full details.
+
+---
+
 # IsaacLuaBridge 0.7.1 — Specialist correction candidate
 
 Resource correction after the second failed Switch test: cache actor base paths
