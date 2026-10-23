@@ -16,7 +16,8 @@ MAX_MODULE_FILES = 16
 MAX_TOTAL_LUA = 256 * 1024
 ALLOWED_CALLBACKS = {"MC_POST_UPDATE", "MC_POST_NEW_ROOM"}
 ALLOWED_ISAAC = {"GetItemConfig"}
-ALLOWED_BRIDGE = {"GetRoomCollectibles", "SetSpecialistDance", "SetSpecialistMusic"}
+ALLOWED_BRIDGE = {"GetRoomCollectibles", "SetSpecialistDance", "SetSpecialistMusic",
+                  "GetFrameCount", "GetRuntimeState"}
 IGNORED_FILES = {"main.lua", "metadata.xml", "changelog.txt", "installation.txt"}
 MODULE_SEGMENT = re.compile(r"^[A-Za-z0-9_+-]+$")
 REQUIRE_ARGS = re.compile(r"""^\(\s*(['"])([^'"\\]+)\1\s*\)$""")
@@ -116,7 +117,7 @@ def inspect(source: Path) -> dict:
 
     for pattern, label in [
         (r"\b(?:dofile|loadfile|loadstring)\s*\(", "dynamic Lua loading"),
-        (r"\b(?:Game|MusicManager|Vector)\s*\(", "unimplemented game constructor"),
+        (r"\b(?:Game|MusicManager)\s*\(", "unimplemented game constructor"),
         (r"\b(?:io|os|debug|package)\s*\.", "unavailable Lua library"),
     ]:
         if re.search(pattern, texts):

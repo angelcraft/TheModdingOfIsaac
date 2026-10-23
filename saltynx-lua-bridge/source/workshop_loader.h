@@ -13,7 +13,8 @@ constexpr size_t kWorkshopMaxModuleFiles = 16;
 constexpr size_t kWorkshopMaxModuleLua = 64 * 1024;
 constexpr size_t kWorkshopMaxTotalLua = 256 * 1024;
 constexpr int kWorkshopPostUpdate = 1;
-constexpr int kWorkshopPostNewRoom = 2;
+// PC ModCallbacks values; 2 belongs to MC_POST_RENDER, which is unsupported.
+constexpr int kWorkshopPostNewRoom = 19;
 
 struct WorkshopCallback {
     int callback_id;
@@ -115,6 +116,12 @@ bool workshop_valid_id(const char* id, size_t len) {
 // still the same Lua functions, but table mutations in one mod do not leak to
 // later mods through shared standard-library/API tables.
 void workshop_copy_env_value(lua_State* state, int environment_index, const char* name) {
+    if (std::strcmp(name, "pcall") == 0 || std::strcmp(name, "xpcall") == 0) {
+        lua_pushcfunction(state, std::strcmp(name, "pcall") == 0
+            ? lua_guarded_pcall : lua_guarded_xpcall);
+        lua_setfield(state, environment_index, name);
+        return;
+    }
     lua_getglobal(state, name);
     if (!lua_istable(state, -1)) {
         lua_setfield(state, environment_index, name);
@@ -325,9 +332,8 @@ void workshop_load_mod(lua_State* state, const char* id) {
         lua_setfield(state, environment_index, "require");
         lua_setfenv(state, -2); // pops env
         g_workshop_loading = true;
-        lua_sethook(state, lua_instruction_limit, LUA_MASKCOUNT, kLuaInstructionBudget);
-        status = lua_pcall(state, 0, 0, 0);
-        lua_sethook(state, nullptr, 0, 0);
+        lua_begin_instruction_budget(state);
+        status = lua_end_instruction_budget(state, lua_pcall(state, 0, 0, 0));
         g_workshop_loading = false;
     }
     g_workshop_current_mod_id[0] = 0;
@@ -440,9 +446,8 @@ void workshop_dispatch_post_update(lua_State* state) {
         // Specialist's source registers Epic:OnGameUpdate / Epic:OnNewRoom,
         // whose first parameter is the mod table ("self").
         lua_rawgeti(state, LUA_REGISTRYINDEX, cb.mod_ref);
-        lua_sethook(state, lua_instruction_limit, LUA_MASKCOUNT, kLuaInstructionBudget);
-        const int status = lua_pcall(state, 1, 0, 0);
-        lua_sethook(state, nullptr, 0, 0);
+        lua_begin_instruction_budget(state);
+        const int status = lua_end_instruction_budget(state, lua_pcall(state, 1, 0, 0));
         if (status != 0) {
             const char* error = lua_tostring(state, -1);
             trace(error ? error : "Workshop: callback error");

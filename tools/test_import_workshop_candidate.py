@@ -54,6 +54,34 @@ class ImportCandidateTest(unittest.TestCase):
             self.assertEqual((base / "gtrep.lua").read_bytes(), rep)
             self.assertEqual((base / "gtab+.lua").read_bytes(), ab)
 
+    def test_accepts_vector_and_exposed_bridge_getters(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as temp:
+            source = Path(temp)
+            main = (
+                b'local origin=Vector(0,0)\n'
+                b'local direction=Vector.FromAngle(90)\n'
+                b'local frame=IsaacBridge.GetFrameCount()\n'
+                b'local runtime=IsaacBridge.GetRuntimeState()\n'
+            )
+            (source / "main.lua").write_bytes(main)
+            report = candidate.inspect(source)
+            self.assertTrue(report["candidate"], report["blockers"])
+            output = source / "staged"
+            candidate.stage(report, source, output, "vector")
+            self.assertEqual(
+                (output / "switch/TheModdingOfIsaac/mods/vector/main.lua").read_bytes(),
+                main,
+            )
+
+    def test_rejects_unimplemented_game_and_music_constructors(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as temp:
+            source = Path(temp)
+            for constructor in ("Game", "MusicManager"):
+                (source / "main.lua").write_text(f"local obj={constructor}()\n")
+                report = candidate.inspect(source)
+                self.assertFalse(report["candidate"])
+                self.assertIn("unimplemented game constructor", report["blockers"])
+
     def test_rejects_missing_or_dynamic_modules(self):
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as temp:
             source = Path(temp)

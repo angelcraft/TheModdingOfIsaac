@@ -32,9 +32,7 @@ static int host_log(lua_State* state) {
     return 0;
 }
 
-static void lua_instruction_limit(lua_State* state, lua_Debug*) {
-    luaL_error(state, "host test instruction budget exceeded");
-}
+#include "../source/lua_budget.h"
 
 static bool read_current_room_token(uintptr_t& token) {
     token = g_room_token;
@@ -96,6 +94,13 @@ int main(int argc, char** argv) {
     register_item_config_api(state);
     register_vector_api(state);
     if (luaL_dostring(state,
+        "assert(ModCallbacks.MC_POST_UPDATE == 1); "
+        "assert(ModCallbacks.MC_POST_NEW_ROOM == 19)") != 0) {
+        std::cerr << "PC callback numeric identifiers mismatch\n";
+        lua_close(state);
+        return 1;
+    }
+    if (luaL_dostring(state,
         "local v = Vector(3, 4); assert(v.X == 3 and v.Y == 4); "
         "assert(v:Length() == 5 and v:LengthSquared() == 25); "
         "assert((v + Vector(1, 2)) == Vector(4, 6)); "
@@ -119,6 +124,19 @@ int main(int argc, char** argv) {
     workshop_copy_env_value(state, vector_env, "Vector");
     workshop_copy_env_value(state, vector_env, "assert");
     workshop_copy_env_value(state, vector_env, "math");
+    workshop_copy_env_value(state, vector_env, "pcall");
+    workshop_copy_env_value(state, vector_env, "xpcall");
+    lua_getfield(state, vector_env, "pcall");
+    const bool guarded_pcall = lua_tocfunction(state, -1) == lua_guarded_pcall;
+    lua_pop(state, 1);
+    lua_getfield(state, vector_env, "xpcall");
+    const bool guarded_xpcall = lua_tocfunction(state, -1) == lua_guarded_xpcall;
+    lua_pop(state, 1);
+    if (!guarded_pcall || !guarded_xpcall) {
+        std::cerr << "mod environment exposes unguarded protected calls\n";
+        lua_close(state);
+        return 1;
+    }
     if (luaL_loadstring(state,
         "local v = Vector(3, 4); assert(v:Length() == 5); "
         "assert(Vector.FromAngle(0).X == 1)") != 0) {

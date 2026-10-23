@@ -18,14 +18,14 @@ This is a prioritization snapshot from the six Workshop mods installed locally u
 | `MC_POST_NEW_ROOM` | 5/6 | Implemented as room-token change; device dispatch observed, exact event timing still needs validation |
 | `MC_POST_NEW_LEVEL` | 4/6 | Unsupported |
 | `MC_POST_RENDER` | 4/6 | Unsupported |
-| `MC_POST_UPDATE` | 3/6 | Implemented; device witness recorded 3,446 update callback successes in the two-mod smoke test (derived from 3,448 total successes minus 2 room callbacks) |
+| `MC_POST_UPDATE` | 3/6 | Implemented; device witness recorded 4,374 update callback successes in the two-mod smoke test (derived from 4,376 total successes minus 2 room callbacks) |
 | `MC_PRE_GAME_EXIT` | 3/6 | Unsupported |
 | `MC_USE_ITEM` | 3/6 | Unsupported |
 | `MC_USE_CARD` | 3/6 | Unsupported |
 | `MC_POST_PLAYER_INIT` | 2/6 | Unsupported |
 | `MC_POST_PICKUP_INIT`, `MC_POST_PICKUP_UPDATE`, `MC_PRE_PICKUP_COLLISION` | 1/6 each | Unsupported |
 
-The 2026-10-23 device logs show 3,448 Workshop callback successes, zero callback errors, and two room callback successes. This confirms the current smoke-test dispatcher runs continuously on the Switch. It does not prove every PC callback's timing or argument semantics.
+The 2026-10-23 device logs show 4,376 Workshop callback successes, zero callback errors, and two room callback successes. This confirms the current smoke-test dispatcher runs continuously on the Switch. It does not prove every PC callback's timing or argument semantics.
 
 ## Most reused game APIs
 
@@ -34,7 +34,7 @@ The 2026-10-23 device logs show 3,448 Workshop callback successes, zero callback
 | `Game()` | 5/6 | Unsupported |
 | `Isaac.GetPlayer` | 4/6 | Unsupported |
 | `Isaac.LoadModData` | 4/6 | Unsupported |
-| `Vector()` | 4/6 | Unsupported |
+| `Vector()` | 4/6 | Implemented float X/Y constructor and math; constructor/components/length/rotation passed on the Switch |
 | `Isaac.GetRoomEntities` | 2/6 | Unsupported |
 | `Isaac.FindInRadius` | 2/6 | Unsupported |
 | `Isaac.GetItemConfig` | 2/6 | Partial: user-supplied metadata exposes collectible `ID` and `Quality` only |

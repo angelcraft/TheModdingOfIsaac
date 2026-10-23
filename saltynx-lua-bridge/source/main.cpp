@@ -126,9 +126,7 @@ int lua_log(lua_State* state) {
 #include "dance_driver.h"
 #include "specialist_music.h"
 
-void lua_instruction_limit(lua_State* state, lua_Debug*) {
-    luaL_error(state, "IsaacLuaBridge: Lua instruction budget exceeded");
-}
+#include "lua_budget.h"
 
 #include "workshop_loader.h"
 #include "item_config.h"
@@ -142,7 +140,7 @@ int lua_get_frame_count(lua_State* state) {
 
 int lua_get_runtime_state(lua_State* state) {
     lua_createtable(state, 0, 7);
-    lua_pushliteral(state, "0.8.0-experimental");
+    lua_pushliteral(state, "0.8.1-experimental");
     lua_setfield(state, -2, "version");
     lua_pushliteral(state, "91C73FDD575061318D68886316AFEAC72388B2AB");
     lua_setfield(state, -2, "target_build_id");
@@ -231,9 +229,8 @@ bool prepare_lua() {
     int status = luaL_loadbuffer(g_lua, source, source_size, "@bridge.lua");
     std::free(source);
     if (status == 0) {
-        lua_sethook(g_lua, lua_instruction_limit, LUA_MASKCOUNT, kLuaInstructionBudget);
-        status = lua_pcall(g_lua, 0, 0, 0);
-        lua_sethook(g_lua, nullptr, 0, 0);
+        lua_begin_instruction_budget(g_lua);
+        status = lua_end_instruction_budget(g_lua, lua_pcall(g_lua, 0, 0, 0));
     }
     if (status != 0) {
         trace(lua_tostring(g_lua, -1));
@@ -278,9 +275,8 @@ void dispatch_lua_update() {
         lua_getglobal(g_lua, "on_update");
         lua_pushinteger(g_lua, static_cast<lua_Integer>(g_frame));
         __atomic_add_fetch(&g_runtime.attempted, 1u, __ATOMIC_ACQ_REL);
-        lua_sethook(g_lua, lua_instruction_limit, LUA_MASKCOUNT, kLuaInstructionBudget);
-        const int status = lua_pcall(g_lua, 1, 0, 0);
-        lua_sethook(g_lua, nullptr, 0, 0);
+        lua_begin_instruction_budget(g_lua);
+        const int status = lua_end_instruction_budget(g_lua, lua_pcall(g_lua, 1, 0, 0));
         if (status != 0) {
             trace(lua_tostring(g_lua, -1));
             lua_pop(g_lua, 1);
@@ -447,7 +443,7 @@ int main(int, char**) {
 
     g_startup_log = SaltySDCore_fopen(
         "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-startup.log", "wb");
-    trace("IsaacLuaBridge 0.8.0: opt-in Workshop Lua callback loader");
+    trace("IsaacLuaBridge 0.8.1: opt-in Workshop Lua callback loader");
     if (!prepare_lua()) {
         if (g_startup_log) SaltySDCore_fclose(g_startup_log);
         g_startup_log = nullptr;
