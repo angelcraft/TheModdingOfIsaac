@@ -37,6 +37,14 @@ jobs:
             "$LUA_DIR/src/liblua.a" -lm -ldl \
             -o "$RUNNER_TEMP/coroutine_instruction_budget"
           "$RUNNER_TEMP/coroutine_instruction_budget"
+          g++ -std=c++17 -Wall -Wextra -Werror \
+            -I"$LUA_DIR/src" \
+            -I"$GITHUB_WORKSPACE/saltynx-lua-bridge/source" \
+            "$GITHUB_WORKSPACE/saltynx-lua-bridge/tests/workshop_loader_host_test.cpp" \
+            "$LUA_DIR/src/liblua.a" -lm -ldl \
+            -o "$RUNNER_TEMP/workshop_loader_host_test"
+          "$RUNNER_TEMP/workshop_loader_host_test" \
+            "$GITHUB_WORKSPACE/saltynx-lua-bridge/workshop_demo"
 
   build:
     runs-on: ubuntu-latest
