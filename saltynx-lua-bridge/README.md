@@ -10,7 +10,7 @@ When `sd:/switch/TheModdingOfIsaac/mods.txt` is missing, **no Workshop scripts
 are loaded**. For an opt-in smoke test install the bundled demo from
 `examples/switch/TheModdingOfIsaac/`.
 
-The read-only Snapshot reports separate registration counts for update and room events, total callback successes, room callback successes and errors. A successful update callback is confirmed on hardware; room-event timing remains unconfirmed. A separate offline catalog enumerates PLT
+The read-only Snapshot reports separate registration counts for update and room events, total callback successes, room callback successes and errors. The bundled two-mod smoke test also checks that a mod's globals and mutable library/API tables do not leak into the next mod; it should log `Workshop isolation: PASS` and report two registrations per supported event. A successful update callback is confirmed on hardware; room-event timing remains unconfirmed. A separate offline catalog enumerates PLT
 imports, dynamic symbols, BL and BLR instruction sites from the verified
 Repentance.nro for further API reverse-engineering; it does **not** capture
 every live/native function call.
