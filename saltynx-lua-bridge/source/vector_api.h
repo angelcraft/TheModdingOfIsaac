@@ -172,23 +172,26 @@ int workshop_vector_cross(lua_State* state) {
     return 1;
 }
 int workshop_vector_distance_squared(lua_State* state) {
-    WorkshopVector* a = workshop_vector_check(state, 1);
-    WorkshopVector* b = workshop_vector_check(state, 2);
+    const int first = lua_istable(state, 1) ? 2 : 1;
+    WorkshopVector* a = workshop_vector_check(state, first);
+    WorkshopVector* b = workshop_vector_check(state, first + 1);
     const float x = a->x - b->x, y = a->y - b->y;
     lua_pushnumber(state, x * x + y * y);
     return 1;
 }
 int workshop_vector_distance(lua_State* state) {
-    WorkshopVector* a = workshop_vector_check(state, 1);
-    WorkshopVector* b = workshop_vector_check(state, 2);
+    const int first = lua_istable(state, 1) ? 2 : 1;
+    WorkshopVector* a = workshop_vector_check(state, first);
+    WorkshopVector* b = workshop_vector_check(state, first + 1);
     const float x = a->x - b->x, y = a->y - b->y;
     lua_pushnumber(state, std::sqrt(x * x + y * y));
     return 1;
 }
 int workshop_vector_lerp(lua_State* state) {
-    WorkshopVector* a = workshop_vector_check(state, 1);
-    WorkshopVector* b = workshop_vector_check(state, 2);
-    const float t = static_cast<float>(luaL_checknumber(state, 3));
+    const int first = lua_istable(state, 1) ? 2 : 1;
+    WorkshopVector* a = workshop_vector_check(state, first);
+    WorkshopVector* b = workshop_vector_check(state, first + 1);
+    const float t = static_cast<float>(luaL_checknumber(state, first + 2));
     return workshop_vector_push(state, a->x + (b->x - a->x) * t,
                                a->y + (b->y - a->y) * t);
 }
@@ -244,6 +247,12 @@ void register_vector_api(lua_State* state) {
     lua_newtable(state);
     lua_pushcfunction(state, workshop_vector_from_angle);
     lua_setfield(state, -2, "FromAngle");
+    lua_pushcfunction(state, workshop_vector_distance);
+    lua_setfield(state, -2, "Distance");
+    lua_pushcfunction(state, workshop_vector_distance_squared);
+    lua_setfield(state, -2, "DistanceSquared");
+    lua_pushcfunction(state, workshop_vector_lerp);
+    lua_setfield(state, -2, "Lerp");
     lua_newtable(state);
     lua_pushcfunction(state, workshop_vector_new);
     lua_setfield(state, -2, "__call");
