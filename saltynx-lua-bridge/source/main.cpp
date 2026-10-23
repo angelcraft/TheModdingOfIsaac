@@ -123,6 +123,7 @@ int lua_log(lua_State* state) {
 
 #include "pedestal_reader.h"
 #include "dance_driver.h"
+#include "specialist_music.h"
 
 void lua_instruction_limit(lua_State* state, lua_Debug*) {
     luaL_error(state, "IsaacLuaBridge: Lua instruction budget exceeded");
@@ -136,7 +137,7 @@ int lua_get_frame_count(lua_State* state) {
 
 int lua_get_runtime_state(lua_State* state) {
     lua_createtable(state, 0, 7);
-    lua_pushliteral(state, "0.6.0");
+    lua_pushliteral(state, "0.7.0");
     lua_setfield(state, -2, "version");
     lua_pushliteral(state, "91C73FDD575061318D68886316AFEAC72388B2AB");
     lua_setfield(state, -2, "target_build_id");
@@ -156,7 +157,7 @@ int lua_get_runtime_state(lua_State* state) {
 }
 
 void register_bridge_api(lua_State* state) {
-    lua_createtable(state, 0, 2);
+    lua_createtable(state, 0, 3);
     lua_pushcfunction(state, lua_get_frame_count);
     lua_setfield(state, -2, "GetFrameCount");
     lua_pushcfunction(state, lua_get_runtime_state);
@@ -165,6 +166,8 @@ void register_bridge_api(lua_State* state) {
     lua_setfield(state, -2, "GetRoomCollectibles");
     lua_pushcfunction(state, lua_set_specialist_dance);
     lua_setfield(state, -2, "SetSpecialistDance");
+    lua_pushcfunction(state, lua_set_specialist_music);
+    lua_setfield(state, -2, "SetSpecialistMusic");
     lua_setglobal(state, "IsaacBridge");
 }
 
@@ -426,7 +429,7 @@ int main(int, char**) {
 
     g_startup_log = SaltySDCore_fopen(
         "sdmc:/SaltySD/plugins/010021C000B6A000/bridge-startup.log", "wb");
-    trace("IsaacLuaBridge 0.6.0: Specialist costume candidate");
+    trace("IsaacLuaBridge 0.7.0: Specialist quality, character and music candidate");
     if (!prepare_lua()) {
         if (g_startup_log) SaltySDCore_fclose(g_startup_log);
         g_startup_log = nullptr;
@@ -469,6 +472,9 @@ int main(int, char**) {
     trace(marker);
     std::snprintf(marker, sizeof(marker), "bridge_dance_address=0x%016llX",
                   static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(&g_dance)));
+    trace(marker);
+    std::snprintf(marker, sizeof(marker), "bridge_music_address=0x%016llX",
+                  static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(&g_specialist_music)));
     trace(marker);
     Handle worker = INVALID_HANDLE;
     const Result worker_result = svcCreateThread(

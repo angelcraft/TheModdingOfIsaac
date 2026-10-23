@@ -9,6 +9,7 @@ struct DanceWitness {
 alignas(8) DanceWitness g_dance={0x44414E31u,1u,0,0,0,0,0,0,0,0,502,0};
 static_assert(sizeof(DanceWitness)==48,"Dance witness layout");
 uintptr_t g_dance_owner=0;
+int g_dance_asset_type=-1;
 bool g_dance_checked=false, g_dance_verified=false;
 
 bool dance_contract_ready(uintptr_t base) {
@@ -29,8 +30,8 @@ int dance_error(lua_State* state,u32 code,const char* reason) {
     ++g_dance.failures; g_dance.last_error=code;
     lua_pushnil(state); lua_pushstring(state,reason); return 2;
 }
-bool costume_present(uintptr_t player,uintptr_t item,bool& present) {
-    uintptr_t begin=0,end=0; present=false;
+bool costume_present(uintptr_t player,uintptr_t item,bool& present,uintptr_t& matched_entry) {
+    uintptr_t begin=0,end=0; present=false; matched_entry=0;
     if(!game_read(player,0x1588,begin) || !game_read(player,0x1590,end) || end<begin ||
        (end-begin)%0x178 || (end-begin)/0x178>128) return false;
     if(begin==end) return true;
@@ -38,13 +39,16 @@ bool costume_present(uintptr_t player,uintptr_t item,bool& present) {
     for(uintptr_t p=begin;p<end;p+=0x178) {
         uintptr_t config=0;
         if(!game_read(p,0x158,config)) return false;
-        if(config==item) present=true;
+        if(config==item) { present=true; matched_entry=p; }
     }
     return true;
 }
 int lua_set_specialist_dance(lua_State* state) {
     const bool desired=lua_toboolean(state,1);
     g_dance.requested=desired;
+    const lua_Integer selected=luaL_optinteger(state,2,0);
+    if(selected<0 || selected>65535) return dance_error(state,13,"invalid pedestal item id");
+    g_dance.target_id=static_cast<u32>(selected);
     uintptr_t base=0,manager=0,game=0,room=0,array=0;
     if(!pedestal_contract_ready(base) || !dance_contract_ready(base)) {
         g_dance.contract=2; return dance_error(state,1,"dance code contract mismatch");
@@ -62,7 +66,7 @@ int lua_set_specialist_dance(lua_State* state) {
         return dance_error(state,2,"manager unavailable");
     if(status!=2) {
         // Never dereference a destroyed run's player to perform cleanup.
-        g_dance_owner=0; g_dance.active=0; lua_pushboolean(state,1); return 1;
+        g_dance_owner=0; g_dance_asset_type=-1; g_dance.active=0; lua_pushboolean(state,1); return 1;
     }
     if(!global_object(base,0xAAC698,game) || !game_read(game,0x21550,room) || !room ||
        room>UINTPTR_MAX-0x1950 || !game_read(room+0x1950,0x78,array) ||
@@ -83,7 +87,7 @@ int lua_set_specialist_dance(lua_State* state) {
             return dance_error(state,5,"unsupported player receiver");
         player=entity;
     }
-    if(g_dance_owner && g_dance_owner!=player) { g_dance_owner=0; g_dance.active=0; }
+    if(g_dance_owner && g_dance_owner!=player) { g_dance_owner=0; g_dance_asset_type=-1; g_dance.active=0; }
     if(players!=1) return dance_error(state,6,"candidate requires one player");
     uintptr_t items=0,items_end=0,item=0; u32 id=0;
     if(manager>UINTPTR_MAX-0x36538) return dance_error(state,7,"manager overflow");
@@ -93,25 +97,62 @@ int lua_set_specialist_dance(lua_State* state) {
        (items_end-items)/8>1024 || !game_read(items,4*8,item) || !item ||
        !readable_range(item,0xC8) || !game_read(item,4,id) || id!=4)
         return dance_error(state,7,"null costume 4 unavailable");
-    bool present=false;
-    if(!costume_present(player,item,present)) return dance_error(state,8,"costume vector unavailable");
+    u32 player_type=0;
+    if(!game_read(player,0x1738,player_type) || player_type>40)
+        return dance_error(state,14,"unsupported player type");
+    bool present=false; uintptr_t costume_entry=0;
+    if(!costume_present(player,item,present,costume_entry)) return dance_error(state,8,"costume vector unavailable");
     if(desired && present && g_dance_owner!=player) {
         ++g_dance.conflicts;
         return dance_error(state,9,"costume already owned by game");
     }
     using CostumeCall=void (*)(void*,int);
+    if(desired && present && g_dance_owner==player && g_dance_asset_type!=static_cast<int>(player_type)) {
+        reinterpret_cast<CostumeCall>(base+0x2F2170)(reinterpret_cast<void*>(player),4);
+        if(!costume_present(player,item,present,costume_entry) || present)
+            return dance_error(state,11,"native costume type refresh failed");
+        ++g_dance.removals; g_dance_owner=0; g_dance_asset_type=-1;
+    }
     if(desired && !present) {
         reinterpret_cast<CostumeCall>(base+0x291BBC)(reinterpret_cast<void*>(player),4);
-        if(!costume_present(player,item,present) || !present)
+        if(!costume_present(player,item,present,costume_entry) || !present || !costume_entry)
             return dance_error(state,10,"native costume addition not observed");
-        g_dance_owner=player; ++g_dance.additions;
+        static const char* paths[41]={
+            "gfx/characters/specialist_switch/character_00.anm2","gfx/characters/specialist_switch/character_01.anm2",
+            "gfx/characters/specialist_switch/character_02.anm2","gfx/characters/specialist_switch/character_03.anm2",
+            "gfx/characters/specialist_switch/character_04.anm2","gfx/characters/specialist_switch/character_05.anm2",
+            "gfx/characters/specialist_switch/character_06.anm2","gfx/characters/specialist_switch/character_07.anm2",
+            "gfx/characters/specialist_switch/character_08.anm2","gfx/characters/specialist_switch/character_09.anm2",
+            "gfx/characters/specialist_switch/character_10.anm2","gfx/characters/specialist_switch/character_11.anm2",
+            "gfx/characters/specialist_switch/character_12.anm2","gfx/characters/specialist_switch/character_13.anm2",
+            "gfx/characters/specialist_switch/character_14.anm2","gfx/characters/specialist_switch/character_15.anm2",
+            "gfx/characters/specialist_switch/character_16.anm2","gfx/characters/specialist_switch/character_17.anm2",
+            "gfx/characters/specialist_switch/character_18.anm2","gfx/characters/specialist_switch/character_19.anm2",
+            "gfx/characters/specialist_switch/character_20.anm2","gfx/characters/specialist_switch/character_21.anm2",
+            "gfx/characters/specialist_switch/character_22.anm2","gfx/characters/specialist_switch/character_23.anm2",
+            "gfx/characters/specialist_switch/character_24.anm2","gfx/characters/specialist_switch/character_25.anm2",
+            "gfx/characters/specialist_switch/character_26.anm2","gfx/characters/specialist_switch/character_27.anm2",
+            "gfx/characters/specialist_switch/character_28.anm2","gfx/characters/specialist_switch/character_29.anm2",
+            "gfx/characters/specialist_switch/character_30.anm2","gfx/characters/specialist_switch/character_31.anm2",
+            "gfx/characters/specialist_switch/character_32.anm2","gfx/characters/specialist_switch/character_33.anm2",
+            "gfx/characters/specialist_switch/character_34.anm2","gfx/characters/specialist_switch/character_35.anm2",
+            "gfx/characters/specialist_switch/character_36.anm2","gfx/characters/specialist_switch/character_37.anm2",
+            "gfx/characters/specialist_switch/character_38.anm2","gfx/characters/specialist_switch/character_39.anm2",
+            "gfx/characters/specialist_switch/character_40.anm2"};
+        struct BorrowedLibcppString { u64 capacity_flag; u64 size; const char* data; } path={};
+        path.size=std::strlen(paths[player_type]); path.capacity_flag=(path.size+1)|1ULL; path.data=paths[player_type];
+        using LoadCall=void (*)(void*,const BorrowedLibcppString*,bool);
+        using GraphicsCall=void (*)(void*);
+        reinterpret_cast<LoadCall>(base+0xC970)(reinterpret_cast<void*>(costume_entry),&path,false);
+        reinterpret_cast<GraphicsCall>(base+0xCB6C)(reinterpret_cast<void*>(costume_entry));
+        g_dance_owner=player; g_dance_asset_type=static_cast<int>(player_type); ++g_dance.additions;
     } else if(!desired && g_dance_owner==player && present) {
         reinterpret_cast<CostumeCall>(base+0x2F2170)(reinterpret_cast<void*>(player),4);
-        if(!costume_present(player,item,present) || present)
+        if(!costume_present(player,item,present,costume_entry) || present)
             return dance_error(state,11,"native costume removal not observed");
-        ++g_dance.removals; g_dance_owner=0;
+        ++g_dance.removals; g_dance_owner=0; g_dance_asset_type=-1;
     }
-    if(!present) g_dance_owner=0;
+    if(!present) { g_dance_owner=0; g_dance_asset_type=-1; }
     g_dance.active=(present && g_dance_owner==player)?1:0;
     g_dance.last_error=0;
     lua_pushboolean(state,1); return 1;

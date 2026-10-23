@@ -10,6 +10,9 @@ static const struct { uintptr_t offset; size_t size; u64 fingerprint; } kDanceGu
     {0x6730A0,0x10,0xDB6B53F01B263885ULL},
     {0x6716F0,0x10,0xED5AFCF6825FABB6ULL},
     {0x678230,0x10,0x0A31A6EE58AEEB8AULL},
+    {0xC970,0x1FC,0xCF2D49D95481937BULL},
+    {0xCB6C,0x8,0xD3B86355E5FEB39BULL},
+    {0x2AACCC,0x1410,0x1B502654BCEB5506ULL},
 };
 static const struct { uintptr_t got, target; } kDanceBindings[] = {
     {0xA9F7B8,0x3C0CC4},

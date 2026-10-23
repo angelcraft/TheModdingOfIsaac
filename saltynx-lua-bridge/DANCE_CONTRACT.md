@@ -1,16 +1,20 @@
-# Specialist 0.6.0 device candidate
+# Specialist 0.7.0 candidate and 0.6.0 device baseline
 
 Stable 0.5.0 remains at `stable/isaacluabridge-0.5.0` / e9b20cc807047c4307d2bcf4cdcbb59310516508.
 Its device reader observed item 502, 7320 successful Lua callbacks, zero callback
-errors, 488 scans and zero read errors. This is not evidence of animation success.
+errors, 488 scans and zero read errors. The user then confirmed visible
+Specialist dancing with 0.6.0 on device. That confirmation is the stable
+starting point for this candidate.
 
 ## Lua rule
 
-Every third update, read the current room. Apply while an uncollected type-5,
-variant-100 pedestal with subtype 502 is present. Remove when absent, including
-pickup and leaving its room. No range or input check. This candidate does not
-implement the Workshop mod's quality, visibility, music, other characters or API.
-Multiple adjacent qualifying rooms keep the dance active. Use one normal Isaac.
+Every third update, read the current room. 0.7.0 applies only while at least
+one uncollected type-5, variant-100 pedestal whose ID is quality 4 in the
+extracted Switch metadata is present. The embedded ID list was derived from
+`items_metadata.xml` SHA256
+`42b3eb47a2f39d7120708ad32a790fc0c1129dd845f3cbdc969d702a5f17152e`.
+Unknown IDs fail closed. Use one normal Isaac; simultaneous/co-op player
+costumes are still rejected.
 
 ## Verified native call flow
 
@@ -40,26 +44,37 @@ resolver. This adds no executable patch and does not change the working hook.
 Only freshly enumerated current-run player pointers are used, with bounds on
 every vector/range. A pre-existing null costume 4 is never claimed or removed.
 Native calls execute after original IsaacUpdate, on its serialized owner thread.
+For PlayerType 0–40, 0.7.0 reads the verified PlayerType field and asks the game
+to load the matching Specialist ANM2 into the null-4 costume entry. The ANM2
+Load and LoadGraphics functions and ChangePlayerType implementation are
+fingerprinted for the target NRO. A player-type change removes and recreates
+only the costume owned by this bridge.
 
 ## Local assets
 
-This temporary visual test reuses null costume 4 (Gnawed Leaf statue), replacing
-its ANM2, RGBA PCX, cache actor and XML priority/flying metadata via LayeredFS.
-Consequently Gnawed Leaf's statue visual is also changed during this test.
-No new unknown costume ID or animation method is invoked. Assets remain local;
-the repository and Actions artifacts contain no game asset cache.
+The 0.6.0 test reused null costume 4 (Gnawed Leaf statue), replacing its art.
+The 0.7.0 package restores the original Gnawed Leaf ANM2, texture and cache
+actor. It appends 41 Specialist cache actors, includes each referenced sheet,
+and retains the original costume-4 priority/flying settings needed for the
+animation to render above character costumes. Assets remain local; the
+repository and Actions artifacts contain no game asset cache.
 
-`build_specialist_assets.py` serializes the complete original ANM2 into a
-byte-exact 4816-byte cache actor at offset5092462 before accepting replacement.
-It preserves the original cache key and every byte outside that actor. The
-replacement comes from the provided Specialist Isaac animation, using the
-existing registered statue-head texture path. The generated 4-plane PCX is
-independently decoded and compared against all source RGBA pixels.
+`build_specialist_070_assets.py` appends to the original Switch animation cache
+without replacing existing actors. It serializes the provided character ANM2s
+and converts their source PNGs to four-plane PCX, independently decoding each
+conversion and checking every RGBA pixel. It also prepares an isolated Ogg
+Vorbis Specialist track as music ID 200; the native code verifies the loaded
+music-table path before calling `Music::Play`, and calls `Room::PlayMusic` when
+the condition ends. Track 200 is registered from a separate
+`specialist_music.xml` via the verified `Music::LoadConfig(path,true)` path;
+the true flag preserves existing base and DLC music entries.
 
-Assets are mounted under `romfs/rp_patch/resources/`. Cache-format agreement is
-verified offline; the mount, native calls and actual visible dance still require
-the device. Snapshot 0.6.0 reports contract, requests, additions, removals and
-failure codes, and deliberately never claims visual success from those counts.
+Assets are mounted under `romfs/rp_patch/resources/`. Cache format and audio
+metadata are verified offline. New actor mounting, all character drawings,
+quality selection, music playback/restoration, and no regressions to original
+tracks still require device confirmation. Snapshot 0.7.0 reports contract,
+requests, additions, removals and music starts/restores/failures; those counters
+do not prove audible or visual success.
 
 Rollback: restore the preserved 0.5.0 ELF/Lua and remove only the four files
 listed in the local installer manifest, restoring prior files from its backup.
