@@ -1,15 +1,26 @@
--- Safe Workshop compatibility smoke test: no native game mutation.
+-- First half of the two-mod isolation smoke test. Changes here must not leak
+-- into the next mod's globals, standard-library tables or API enum tables.
 local mod = RegisterMod("Workshop Loader Demo", 1)
+local post_update_id = ModCallbacks.MC_POST_UPDATE
+local post_new_room_id = ModCallbacks.MC_POST_NEW_ROOM
 local calls = 0
 
+math.__tmi_isolation_probe = "demo"
+string.__tmi_isolation_probe = "demo"
+table.__tmi_isolation_probe = "demo"
+coroutine.__tmi_isolation_probe = "demo"
+ModCallbacks.MC_POST_UPDATE = 999
+IsaacBridge.__tmi_isolation_probe = "demo"
+workshop_global_probe = "demo"
+
 local function post_update(self)
-    if self ~= mod then
-        log("Workshop demo: callback mod argument mismatch")
-        return
-    end
     calls = calls + 1
     if calls == 1 then
-        log("Workshop demo: first MC_POST_UPDATE callback")
+        if self == mod then
+            log("Workshop demo: callback mod argument OK")
+        else
+            log("Workshop demo: callback mod argument mismatch")
+        end
     elseif calls == 600 then
         log("Workshop demo: 600 callbacks executed")
     end
@@ -23,5 +34,5 @@ local function new_room(self)
     end
 end
 
-mod:AddCallback(ModCallbacks.MC_POST_UPDATE, post_update)
-mod:AddCallback(ModCallbacks.MC_POST_NEW_ROOM, new_room)
+mod:AddCallback(post_update_id, post_update)
+mod:AddCallback(post_new_room_id, new_room)
