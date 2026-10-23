@@ -61,7 +61,7 @@ This proves the method exists and is used internally in this exact binary. It do
 | --- | --- | --- |
 | `RegisterMod(name, 1)`, `mod:AddCallback(id, fn)` | Create `Epic`; register handlers | Narrow subset implemented. Callback methods receive the mod table as `self`. |
 | `Game()` / `Game:GetPlayer(index)` | Cached as `game`; loops over players | Unsupported; PC player IDs are zero-based. Specialist's local source loops from 1 through `GetNumPlayers()`, which can skip player 0 and duplicate the last player in co-op; [API reference](https://wofsauge.github.io/IsaacDocs/rep/Isaac.html#getplayer) |
-| `game:GetNumPlayers()`, `game:GetPlayer(index)` | Apply/remove costumes and choose character music | Unsupported |
+| `game:GetNumPlayers()` | Apply/remove costumes and choose character music | Unsupported; `GetPlayer(index)` is covered above |
 | `player:GetPlayerType()`, `GetCollectibleNum(id, true)` | Character selection and item-costume checks | Unsupported |
 | `player:AddNullCostume(id)`, `TryRemoveNullCostume(id)` | Start/stop the dance and item costume | Unsupported; animation must be applied using verified player/costume behavior |
 | `game:GetRoom()`, `room:GetType()`, `room:PlayMusic()` | Treasure-room blind-item exception; restore room music | Unsupported |
