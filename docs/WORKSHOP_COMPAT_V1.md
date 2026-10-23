@@ -36,7 +36,7 @@ To disable the demo, rename mods.txt; to return fully to a known installation, r
 - Basic Lua 5.1 functions and math/string/table/coroutine libraries.
 - Existing IsaacBridge functions still exist, but they are NOT PC Isaac functions.
 
-Unsupported: Game(), Isaac.GetRoomEntities, MusicManager(), Isaac.GetCostumeIdByPath, MC_POST_NEW_ROOM, require, file IO, save data, other callbacks, automatic resource merging and rendering/music imports.
+Unsupported: Game(), Isaac.GetRoomEntities, MusicManager(), Isaac.GetCostumeIdByPath, MC_POST_NEW_LEVEL, MC_POST_PICKUP_INIT, MC_POST_PLAYER_UPDATE, require, file IO, save data, other callbacks, automatic resource merging and rendering/music imports.
 The original PC Specialist main.lua therefore cannot run unmodified. This is deliberately a small loader proof of concept; no claims about native music or animation compatibility.
 
 ## Catalog calls from the original NRO
