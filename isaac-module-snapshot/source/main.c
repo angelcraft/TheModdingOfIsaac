@@ -169,8 +169,8 @@ static void report_workshop_state(void) {
         return;
     }
     struct { u32 magic, version, loaded, errors, registered, callback_success,
-                 callback_errors; } w = {0};
-    _Static_assert(sizeof(w) == 28, "Workshop witness layout");
+                 callback_errors, room_callback_success; } w = {0};
+    _Static_assert(sizeof(w) == 32, "Workshop witness layout");
     MemoryInfo m = {0};
     Result rc = cheat_query(&m, g_bridge_workshop_address);
     if (R_FAILED(rc) || !(m.perm & Perm_R) ||
@@ -189,8 +189,9 @@ static void report_workshop_state(void) {
              " registered_post_update=%" PRIu32,
              w.loaded, w.errors, w.registered);
     log_line("workshop_callback_success=%" PRIu32
-             " callback_errors=%" PRIu32,
-             w.callback_success, w.callback_errors);
+             " callback_errors=%" PRIu32
+             " room_callback_success=%" PRIu32,
+             w.callback_success, w.callback_errors, w.room_callback_success);
 }
 
 static void report_dance_state(void) {
