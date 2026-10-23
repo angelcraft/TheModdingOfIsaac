@@ -25,8 +25,10 @@ int workshop_vector_push(lua_State* state, float x, float y) {
 }
 
 int workshop_vector_new(lua_State* state) {
-    const float x = static_cast<float>(luaL_checknumber(state, 1));
-    const float y = static_cast<float>(luaL_checknumber(state, 2));
+    // A callable Lua table is passed as argument 1 to its __call handler.
+    const int x_index = lua_istable(state, 1) ? 2 : 1;
+    const float x = static_cast<float>(luaL_checknumber(state, x_index));
+    const float y = static_cast<float>(luaL_checknumber(state, x_index + 1));
     return workshop_vector_push(state, x, y);
 }
 
