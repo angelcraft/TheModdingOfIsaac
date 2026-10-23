@@ -1,3 +1,24 @@
+# IsaacLuaBridge 0.8.0 — experimental Workshop Lua loader
+
+This isolated feature branch adds optional SD-based PC-style Lua mod loading:
+`RegisterMod` + `MC_POST_UPDATE` only. The current, previously verified
+specialized Specialist bridge.lua still runs independently.
+
+When `sd:/switch/TheModdingOfIsaac/mods.txt` is missing, **no Workshop scripts
+are loaded**. For an opt-in smoke test install the bundled demo from
+`examples/switch/TheModdingOfIsaac/`.
+
+The read-only Snapshot can report loaded mod count, registered callbacks,
+callback successes and errors. A separate offline catalog enumerates PLT
+imports, dynamic symbols, BL and BLR instruction sites from the verified
+Repentance.nro for further API reverse-engineering; it does **not** capture
+every live/native function call.
+
+**Not yet tested on hardware; original Specialist Workshop Lua does not work
+unmodified.** See `docs/WORKSHOP_COMPAT_V1.md` for full details.
+
+---
+
 # IsaacLuaBridge 0.7.1 — Specialist correction candidate
 
 Resource correction after the second failed Switch test: cache actor base paths
