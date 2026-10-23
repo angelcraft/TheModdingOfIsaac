@@ -37,6 +37,17 @@ jobs:
           git clone --quiet https://github.com/carstene1ns/lua51-switch.git "$DEPS/lua51-switch"
           git -C "$DEPS/lua51-switch" checkout --quiet "$LUA_REF"
           make -C "$DEPS/lua51-switch/src" switch
+          # Host-side regression test: Lua 5.1 threads must retain the
+          # instruction budget hook copied from the mod-loading state.
+          make -C "$DEPS/lua51-switch/src" clean linux CC=gcc AR="ar rcu" RANLIB=ranlib
+          gcc -std=c99 -Wall -Wextra -Werror \
+            -I"$DEPS/lua51-switch/src" \
+            "$ROOT/tests/coroutine_instruction_budget.c" \
+            "$DEPS/lua51-switch/src/liblua.a" -lm -ldl \
+            -o "$RUNNER_TEMP/coroutine_instruction_budget"
+          "$RUNNER_TEMP/coroutine_instruction_budget"
+          # Restore the pinned Switch library objects before linking the ELF.
+          make -C "$DEPS/lua51-switch/src" clean switch
 
           cp "$ROOT/source/main.cpp" "$DEPS/NX-FPS/source/main.cpp"
           cp "$ROOT/source/"*.h "$DEPS/NX-FPS/source/"
