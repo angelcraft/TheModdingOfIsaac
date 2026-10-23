@@ -1,6 +1,15 @@
 -- First half of the two-mod isolation smoke test. Changes here must not leak
 -- into the next mod's globals, standard-library tables or API enum tables.
 local mod = RegisterMod("Workshop Loader Demo", 1)
+local item_config = Isaac.GetItemConfig()
+local item_four = item_config:GetCollectible(4)
+local item_502 = item_config:GetCollectible(502)
+if item_four and item_four.ID == 4 and item_four.Quality == 4 and
+   item_502 and item_502.ID == 502 and item_502.Quality == 1 then
+    log("Workshop ItemConfig: PASS (id 4 quality 4; id 502 quality 1)")
+else
+    log("Workshop ItemConfig: FAIL (metadata missing or values differ)")
+end
 local post_update_id = ModCallbacks.MC_POST_UPDATE
 local post_new_room_id = ModCallbacks.MC_POST_NEW_ROOM
 local calls = 0

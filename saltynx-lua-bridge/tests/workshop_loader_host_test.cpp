@@ -121,6 +121,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    if (!has_trace("Workshop ItemConfig: PASS (id 4 quality 4; id 502 quality 1)")) {
+        std::cerr << "ItemConfig demo did not report expected qualities\\n";
+        lua_close(state);
+        return 1;
+    }
+
     workshop_dispatch_post_update(state);
     if (g_workshop.callback_errors != 0 || g_workshop.callback_success != 4 ||
         g_workshop.room_callback_success != 2 ||
