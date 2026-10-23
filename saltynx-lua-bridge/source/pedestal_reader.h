@@ -46,6 +46,21 @@ bool global_object(uintptr_t base, size_t got_offset, uintptr_t& object) {
     return game_read(base,got_offset,global) && game_read(global,0,object) && object;
 }
 
+// Reuses the already verified game/room pointers to detect room transitions.
+// This is observational only; no game memory is written.
+bool read_current_room_token(uintptr_t& token) {
+    uintptr_t base = 0, manager = 0, game = 0, room = 0;
+    u32 manager_state = 0;
+    if (!pedestal_contract_ready(base) ||
+        !global_object(base, 0xAAC648, manager) ||
+        !game_read(manager, 8, manager_state) || manager_state != 2 ||
+        !global_object(base, 0xAAC698, game) ||
+        !game_read(game, 0x21550, room) || !room ||
+        !readable_range(room, 0x1950)) return false;
+    token = room;
+    return true;
+}
+
 int room_read_error(lua_State* state, const char* reason) {
     ++g_pedestal.failures;
     lua_pushnil(state);
