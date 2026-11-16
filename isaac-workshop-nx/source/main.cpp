@@ -16,6 +16,7 @@
 namespace {
 constexpr const char* kAppRoot = "sdmc:/switch/isaac_workshop_nx";
 constexpr const char* kInbox = "sdmc:/switch/isaac_workshop_nx/inbox";
+constexpr const char* kBridgeConfig = "sdmc:/switch/isaac_workshop_nx/bridge.txt";
 constexpr size_t kMaxDownload = 32 * 1024 * 1024;
 constexpr size_t kMaxMetadata = 1024 * 1024;
 constexpr size_t kMaxBrowse = 3 * 1024 * 1024;
@@ -182,6 +183,72 @@ bool download_public_zip(const isaacnx::WorkshopItem& item, std::string& path, s
     return true;
 }
 
+bool read_bridge_config(std::string& endpoint, std::string& error) {
+    FILE* file = fopen(kBridgeConfig, "rb");
+    if (!file) {
+        error = "Falta bridge.txt de tu Android en switch/isaac_workshop_nx";
+        return false;
+    }
+    char line[160] {};
+    bool ok = fgets(line, sizeof(line), file) != nullptr && fgetc(file) == EOF;
+    fclose(file);
+    if (!ok) { error = "bridge.txt debe tener una sola URL corta"; return false; }
+    return isaacnx::parse_bridge_endpoint(line, endpoint, error);
+}
+
+bool download_bridge_zip(const isaacnx::WorkshopItem& item, std::string& path, std::string& error) {
+    std::string endpoint;
+    if (!read_bridge_config(endpoint, error)) return false;
+    std::string validated_id;
+    if (!isaacnx::parse_workshop_id(item.id, validated_id)) {
+        error = "ID de mod no valido para descarga local"; return false;
+    }
+    const std::string url = endpoint + "/steam_" + validated_id + ".zip";
+    path = std::string(kInbox) + "/steam_" + validated_id + ".zip";
+    int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0600);
+    if (fd < 0) { error = "ZIP ya existe en inbox; no lo sobrescribo"; return false; }
+    FILE* file = fdopen(fd, "wb");
+    if (!file) { close(fd); unlink(path.c_str()); error = "No pude preparar ZIP local"; return false; }
+    CURL* curl = curl_easy_init();
+    if (!curl) { fclose(file); unlink(path.c_str()); error = "No pude iniciar curl"; return false; }
+    FileWriter writer {file};
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, file_write);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &writer);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "IsaacWorkshopNX/0.3 (private LAN bridge)");
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
+    // Steam's download can be running on the Android companion before its
+    // HTTP response starts. The server itself stops attempts after 600 s.
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 645L);
+    curl_easy_setopt(curl, CURLOPT_NOPROXY, "*");
+#if LIBCURL_VERSION_NUM >= 0x075500
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "http");
+#else
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS, long(CURLPROTO_HTTP));
+#endif
+    const CURLcode status = curl_easy_perform(curl);
+    long http = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http);
+    curl_easy_cleanup(curl);
+    bool closed = fclose(file) == 0;
+    if (status != CURLE_OK || http != 200 || writer.excessive || !closed) {
+        unlink(path.c_str());
+        error = "Puente Android: HTTP " + std::to_string(http) +
+                (writer.excessive ? ", ZIP >32 MiB" : ", comprueba servidor y Wi-Fi");
+        return false;
+    }
+    file = fopen(path.c_str(), "rb");
+    unsigned char signature[4] {};
+    const bool is_zip = file && fread(signature, 1, 4, file) == 4 &&
+                        signature[0] == 'P' && signature[1] == 'K' &&
+                        signature[2] == 3 && signature[3] == 4;
+    if (file) fclose(file);
+    if (!is_zip) { unlink(path.c_str()); error = "Puente no entrego ZIP valido"; return false; }
+    return true;
+}
+
 std::vector<std::string> inbox_files() {
     std::vector<std::string> files;
     DIR* d = opendir(kInbox);
@@ -202,12 +269,13 @@ std::vector<std::string> inbox_files() {
 
 void display(const std::string& target, const std::vector<std::string>& list, size_t selected) {
     consoleClear();
-    printf("ISAAC WORKSHOP NX 0.2 | Switch / Repentance\n");
+    printf("ISAAC WORKSHOP NX 0.3 | Switch / Repentance\n");
     printf("=========================================\n");
     printf("Steam: buscar o consultar ID; ZIP: local\n\n");
     printf("Ruta activa:\n%.78s\n\n", target.empty() ? "NO ENCONTRADA" : target.c_str());
     printf("[X] Workshop ID o enlace Steam\n");
     printf("[R] Buscar mods por nombre\n");
+    printf("[L] En ficha: descarga via Android\n");
     printf("[A] Instalar ZIP seleccionado\n");
     printf("[Y] Actualizar lista  [+] Salir\n");
     printf("[Arriba/Abajo] Seleccionar ZIP\n\n");
@@ -226,7 +294,7 @@ void display(const std::string& target, const std::vector<std::string>& list, si
 void display_search(const std::string& query,
                     const std::vector<isaacnx::WorkshopItem>& results, size_t selected) {
     consoleClear();
-    printf("ISAAC WORKSHOP NX 0.2 | Busqueda Steam\n");
+    printf("ISAAC WORKSHOP NX 0.3 | Busqueda Steam\n");
     printf("=========================================\n");
     printf("Buscando: %.62s\n", isaacnx::safe_console_text(query, 62).c_str());
     printf("[Arriba/Abajo] Elegir  [A] Detalles\n");
@@ -284,6 +352,25 @@ void install_workshop_item(PadState* pad, const std::string& target,
     message = "Instalado: " + isaacnx::safe_console_text(item.title, 64) + ". Reinicia Isaac.";
 }
 
+void install_from_bridge(PadState* pad, const std::string& target,
+                         const isaacnx::WorkshopItem& item) {
+    if (target.empty()) { message = "Sin ruta unica de mods. Revisa carpetas."; return; }
+    std::string endpoint, error;
+    if (!read_bridge_config(endpoint, error)) { message = error; return; }
+    if (!wait_confirm(pad, "Android Wi-Fi: " + item.title)) { message = "Cancelado"; return; }
+    consoleClear();
+    printf("Recibiendo ZIP de Android por Wi-Fi...\n");
+    printf("Steam y la contrasena solo se usan en el telefono.\n");
+    consoleUpdate(nullptr);
+    std::string archive;
+    if (!download_bridge_zip(item, archive, error)) { message = error; return; }
+    if (!isaacnx::install_zip(archive, target, "steam_" + item.id, error)) {
+        message = error + ". ZIP conservado en inbox.";
+        return;
+    }
+    message = "Instalado desde Android: " + isaacnx::safe_console_text(item.title, 55);
+}
+
 void show_workshop_details(PadState* pad, const std::string& target,
                            const isaacnx::WorkshopItem& item) {
     consoleClear();
@@ -295,7 +382,8 @@ void show_workshop_details(PadState* pad, const std::string& target,
     printf("%.380s\n\n", description.empty() ? "Sin descripcion" : description.c_str());
     printf("Preview en Steam: %s\n", item.preview_url.empty() ? "no" : "si");
     printf("Descarga HTTPS publica: %s\n\n", item.download_url.empty() ? "no" : "si");
-    printf("[A] %s  [B] Volver\n", item.download_url.empty() ? "Ver estado" : "Descargar e instalar");
+    printf("[A] %s\n", item.download_url.empty() ? "Ver estado" : "Descargar ZIP publico");
+    printf("[L] Bajar desde Android  [B] Volver\n");
     consoleUpdate(nullptr);
     while (appletMainLoop()) {
         padUpdate(pad);
@@ -303,6 +391,10 @@ void show_workshop_details(PadState* pad, const std::string& target,
         if (keys & (HidNpadButton_B | HidNpadButton_Plus)) return;
         if (keys & HidNpadButton_A) {
             install_workshop_item(pad, target, item);
+            return;
+        }
+        if (keys & HidNpadButton_L) {
+            install_from_bridge(pad, target, item);
             return;
         }
         svcSleepThread(16'000'000);
