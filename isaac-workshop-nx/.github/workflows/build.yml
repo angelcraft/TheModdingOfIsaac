@@ -1,0 +1,23 @@
+name: Compile Switch NRO
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:20260219
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check toolchain and build NRO
+        run: |
+          test -f /opt/devkitpro/portlibs/switch/include/curl/curl.h
+          test -f /opt/devkitpro/portlibs/switch/include/zlib.h
+          make
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IsaacWorkshopNX-homebrew
+          path: IsaacWorkshopNX.nro
+          if-no-files-found: error
