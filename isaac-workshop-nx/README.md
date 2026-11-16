@@ -1,4 +1,4 @@
-# Isaac Workshop NX — prototipo 0.1 (no probado en Switch)
+# Isaac Workshop NX — 0.2 (buscador experimental)
 
 Gestor independiente de mods de **The Binding of Isaac: Repentance** para
 Nintendo Switch con Atmosphère. Código fuente incluido, sin mods de terceros,
@@ -6,6 +6,12 @@ sin archivos del juego y sin credenciales de Steam. No sustituye al runtime.
 
 ## Qué hace
 
+- **Nuevo en 0.2:** pulsa `R` y busca mods por nombre. Lee la pagina publica
+  de busqueda de Steam Workshop, obtiene un maximo de 20 IDs y verifica sus
+  datos en el Web API oficial. Navega con arriba/abajo, pulsa `A` para ver
+  titulo, ID, descripcion y disponibilidad de descarga. Pulsa `B` para volver.
+  La interfaz aun es de texto: los metadatos incluyen una URL de imagen,
+  pero **no muestra miniaturas**. Si Steam cambia el HTML, requiere ajuste.
 - Consulta el título y la disponibilidad de un ID o enlace de Steam Workshop
   a través del endpoint público oficial `GetPublishedFileDetails`.
 - Descarga **únicamente** si Steam ofrece una URL HTTPS pública con un ZIP.
@@ -36,9 +42,10 @@ sin archivos del juego y sin credenciales de Steam. No sustituye al runtime.
    el juego puede leer la carpeta `mods` antes de usar esta app.
 2. Cierra Isaac **por completo**; no lo dejes suspendido en el HOME.
 3. Copia `IsaacWorkshopNX.nro` a `sdmc:/switch/isaac_workshop_nx/`.
-4. Desde HBMenu en modo aplicación, abre el NRO. El botón `X` muestra el
-   teclado nativo para pegar un ID o URL de Workshop. Si `file_url` está vacío,
-   el mensaje indicará que requiere importación de ZIP.
+4. Desde HBMenu en modo aplicación, abre el NRO. Pulsa `R` para buscar por
+   nombre o `X` para pegar un ID/URL de Workshop. El boton `A` abre la ficha
+   de un resultado. Si `file_url` esta vacio, la aplicacion indica que requiere
+   importacion de ZIP; **no simula haber descargado archivos**.
 5. Para instalar un ZIP desde Android, transfiérelo a la carpeta `inbox`
    (p. ej., mediante tu `ftpd pro`). Selecciónalo con arriba/abajo y pulsa `A`.
 6. Reabre Isaac y gestiona los mods desde el menú del runtime.
@@ -57,10 +64,12 @@ las herramientas `nacptool` y `elf2nro`. Con ese entorno:
 make
 ```
 
-El proyecto también incluye `.github/workflows/build.yml` con compilación
-en el contenedor oficial `devkitpro/devkita64`, para obtener el archivo NRO
-desde GitHub Actions, sin ordenador local, **una vez subido a un repositorio**.
-No se ha ejecutado ese workflow ni instalado el resultado en hardware.
+En `angelcraft/TheModdingOfIsaac`, la rama privada
+`feature/isaac-workshop-nx-20261116` contiene el workflow
+`.github/workflows/build-isaac-workshop-nx.yml`. GitHub Actions compila el NRO
+en `devkitpro/devkita64` y lo publica como artefacto descargable. El usuario
+confirmo que **0.1 arranco en Switch y reconocio el mod Candy Pills ULTIMATE**;
+la version 0.2 sigue pendiente de comprobacion en hardware.
 
 Para ejecutar las pruebas de seguridad y metadatos sin SDK de Switch:
 
@@ -79,12 +88,17 @@ make host-test
 - No sobrescribe datos previos; al actualizar un mod, retira tú la versión
   anterior **después** de guardar una copia si lo deseas.
 
-**Estado real de la versión 0.1:** código y pruebas host. No hay `.nro`
-compilado/validado aquí porque este entorno no tiene devkitA64. La descarga
-de Steam Workshop requiere resolver la distribución de contenido protegida
-por el cliente Steam para ser universal; un login web en Switch, por sí solo,
-no proporciona acceso a las APIs nativas de descarga.
+**Estado real de 0.2:** 30 pruebas host y comprobacion sintactica del codigo de
+la consola superadas. No se ha verificado aun una consulta de busqueda desde
+la Switch, ni el NRO compilado de esta revision. La API oficial `QueryFiles`
+requiere clave Steamworks; como alternativa, la busqueda publica de Steam
+por HTML no necesita introducir contrasena, pero puede fallar por cambios de
+su sitio o limitaciones de acceso. La descarga autenticada universal necesita
+un cliente del protocolo de Steam, permisos adecuados y mas investigacion;
+**no hay inicio de sesion Steam ni SteamCMD implementados** en esta version.
 
 Fuente de API: https://partner.steamgames.com/doc/webapi/ISteamRemoteStorage
+
+API de busqueda con clave: https://partner.steamgames.com/doc/webapi/IPublishedFileService
 
 Runtime: https://github.com/granule256/isaac-mod-runtime
