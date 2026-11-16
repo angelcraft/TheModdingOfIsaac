@@ -26,6 +26,52 @@ jobs:
       image: devkitpro/devkita64:20260219
     steps:
       - uses: actions/checkout@v4
+      - name: Probe native WebSocket transport for Steam CM
+        shell: bash
+        run: |
+          set -eu
+          HDR=/opt/devkitpro/portlibs/switch/include/curl/curl.h
+          LIB=/opt/devkitpro/portlibs/switch/lib/libcurl.a
+          NM=/opt/devkitpro/devkitA64/bin/aarch64-none-elf-nm
+          if grep -q 'curl_ws_recv' "$HDR"; then
+            echo "HEADER_WS_API=yes"
+          else
+            echo "HEADER_WS_API=no"
+          fi
+          if test -f "$LIB" && test -x "$NM"; then
+            if "$NM" -g "$LIB" 2>/dev/null | grep -Eq ' [TW] curl_ws_recv        working-directory: isaac-workshop-nx
+        run: |
+          test -f /opt/devkitpro/portlibs/switch/include/curl/curl.h
+          test -f /opt/devkitpro/portlibs/switch/include/zlib.h
+          make
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IsaacWorkshopNX-0.4-plus-steampipe-detection-NO-NATIVE-DOWNLOAD
+          path: isaac-workshop-nx/IsaacWorkshopNX.nro
+          if-no-files-found: error
+; then
+              echo "LINK_WS_RECV=yes"
+            else
+              echo "LINK_WS_RECV=no"
+            fi
+            if "$NM" -g "$LIB" 2>/dev/null | grep -Eq ' [TW] curl_ws_send        working-directory: isaac-workshop-nx
+        run: |
+          test -f /opt/devkitpro/portlibs/switch/include/curl/curl.h
+          test -f /opt/devkitpro/portlibs/switch/include/zlib.h
+          make
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IsaacWorkshopNX-0.4-plus-steampipe-detection-NO-NATIVE-DOWNLOAD
+          path: isaac-workshop-nx/IsaacWorkshopNX.nro
+          if-no-files-found: error
+; then
+              echo "LINK_WS_SEND=yes"
+            else
+              echo "LINK_WS_SEND=no"
+            fi
+          else
+            echo "STATIC_CURL_LIB_OR_NM_MISSING"
+          fi
       - name: Compile Switch homebrew
         working-directory: isaac-workshop-nx
         run: |
