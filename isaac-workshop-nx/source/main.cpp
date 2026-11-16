@@ -174,7 +174,7 @@ bool wait_confirm(PadState* pad, const std::string& title) {
 }
 
 void lookup_and_install(PadState* pad, const std::string& target) {
-    if (target.empty()) { message = "Runtime de Isaac no detectado"; return; }
+    if (target.empty()) { message = "Sin destino unico: falta mods o hay 2 rutas"; return; }
     SwkbdConfig keyboard;
     Result rc = swkbdCreate(&keyboard, 0);
     if (R_FAILED(rc)) { message = "No abre teclado; revisa dns.mitm"; return; }
@@ -206,7 +206,7 @@ void lookup_and_install(PadState* pad, const std::string& target) {
 }
 
 void install_selected(const std::string& target, const std::string& name) {
-    if (target.empty()) { message = "Runtime de Isaac no detectado"; return; }
+    if (target.empty()) { message = "Sin destino unico: falta mods o hay 2 rutas"; return; }
     std::string error;
     if (!isaacnx::install_zip(std::string(kInbox) + "/" + name, target,
                               name.substr(0, name.size() - 4), error)) {
@@ -227,6 +227,7 @@ int main() {
     if (mkdir(kInbox, 0700) != 0 && !isaacnx::is_directory(kInbox))
         message = "Error: no pude crear inbox";
     const std::string target = isaacnx::select_installed_mod_root("sdmc:");
+    if (target.empty()) message = "Sin ruta unica de mods. Revisa ambas carpetas.";
     Result sockets = socketInitializeDefault();
     bool networking = R_SUCCEEDED(sockets) && curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK;
     if (!networking) message = "Red no disponible; importacion ZIP sigue operativa";
