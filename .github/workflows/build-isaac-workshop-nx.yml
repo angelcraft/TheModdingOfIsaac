@@ -39,32 +39,12 @@ jobs:
             echo "HEADER_WS_API=no"
           fi
           if test -f "$LIB" && test -x "$NM"; then
-            if "$NM" -g "$LIB" 2>/dev/null | grep -Eq ' [TW] curl_ws_recv        working-directory: isaac-workshop-nx
-        run: |
-          test -f /opt/devkitpro/portlibs/switch/include/curl/curl.h
-          test -f /opt/devkitpro/portlibs/switch/include/zlib.h
-          make
-      - uses: actions/upload-artifact@v4
-        with:
-          name: IsaacWorkshopNX-0.4-plus-steampipe-detection-NO-NATIVE-DOWNLOAD
-          path: isaac-workshop-nx/IsaacWorkshopNX.nro
-          if-no-files-found: error
-; then
+            if "$NM" -g "$LIB" 2>/dev/null | grep -Eq ' [TW] curl_ws_recv$'; then
               echo "LINK_WS_RECV=yes"
             else
               echo "LINK_WS_RECV=no"
             fi
-            if "$NM" -g "$LIB" 2>/dev/null | grep -Eq ' [TW] curl_ws_send        working-directory: isaac-workshop-nx
-        run: |
-          test -f /opt/devkitpro/portlibs/switch/include/curl/curl.h
-          test -f /opt/devkitpro/portlibs/switch/include/zlib.h
-          make
-      - uses: actions/upload-artifact@v4
-        with:
-          name: IsaacWorkshopNX-0.4-plus-steampipe-detection-NO-NATIVE-DOWNLOAD
-          path: isaac-workshop-nx/IsaacWorkshopNX.nro
-          if-no-files-found: error
-; then
+            if "$NM" -g "$LIB" 2>/dev/null | grep -Eq ' [TW] curl_ws_send$'; then
               echo "LINK_WS_SEND=yes"
             else
               echo "LINK_WS_SEND=no"
