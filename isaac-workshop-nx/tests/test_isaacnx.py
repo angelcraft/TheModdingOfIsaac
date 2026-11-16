@@ -159,12 +159,12 @@ class IsaacWorkshopTests(unittest.TestCase):
         archive(self.zip_path, {"main.lua": "x", "metadata.xml": "y"})
         self.assert_failure("install", self.zip_path, self.base / "missing", "bad")
 
-    def test_root_priority(self):
+    def test_root_overlay_and_ambiguity(self):
         p = run("root", self.base)
         self.assertEqual(p.stdout.strip(), str(self.mods))
         overlay = self.base / "atmosphere" / "contents" / "010021C000B6A000" / "romfs" / "isaac_mods" / "mods"
         overlay.mkdir(parents=True)
-        self.assertEqual(run("root", self.base).stdout.strip(), str(self.mods))
+        self.assertEqual(run("root", self.base).stdout.strip(), "")
         self.mods.rmdir()
         self.assertEqual(run("root", self.base).stdout.strip(), str(overlay))
 
