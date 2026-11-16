@@ -157,10 +157,25 @@ bool valid_item(const Json& entry, const std::string& requested_id, WorkshopItem
     item = {requested_id, entry.at("title").text, entry.at("file_url").text, 250900,
             decimal(entry.at("file_size").text), entry.at("preview_url").text,
             entry.at("file_description").text};
+    // Resolve the native SteamPipe content ID. Downloading it still requires
+    // Steam CM authentication, a depot key, a manifest code, and CDN chunks.
+    item.content_manifest_id = decimal(entry.at("hcontent_file").text);
+    const uint64_t file_type = decimal(entry.at("file_type").text);
+    item.workshop_file_type = file_type <= UINT32_MAX ? static_cast<uint32_t>(file_type) : UINT32_MAX;
     return true;
 }
 
 } // namespace
+
+WorkshopDelivery workshop_delivery(const WorkshopItem& item) {
+    // Workshop collections (file type 2) require child resolution first.
+    if (item.workshop_file_type == 2) return WorkshopDelivery::Unavailable;
+    if (item.download_url.compare(0, 8, "https://") == 0)
+        return WorkshopDelivery::DirectHttps;
+    if (item.content_manifest_id != 0)
+        return WorkshopDelivery::SteamPipeManifest;
+    return WorkshopDelivery::Unavailable;
+}
 
 bool parse_workshop_id(const std::string& input, std::string& id) {
     id.clear();

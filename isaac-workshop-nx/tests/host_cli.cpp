@@ -25,6 +25,22 @@ int main(int argc, char** argv) {
         std::cout << item.id << "\n" << item.title << "\n" << item.download_url << '\n';
         return 0;
     }
+    if (cmd == "delivery" && argc == 4) {
+        std::ifstream file(argv[3]);
+        const std::string response((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        isaacnx::WorkshopItem item;
+        std::string error;
+        if (!isaacnx::parse_workshop_response(response, argv[2], item, error)) {
+            std::cerr << error << '\n'; return 1;
+        }
+        switch (isaacnx::workshop_delivery(item)) {
+            case isaacnx::WorkshopDelivery::DirectHttps: std::cout << "https\n"; break;
+            case isaacnx::WorkshopDelivery::SteamPipeManifest:
+                std::cout << "steampipe:" << item.content_manifest_id << '\n'; break;
+            default: std::cout << "unavailable\n"; break;
+        }
+        return 0;
+    }
     if (cmd == "qr-begin" && argc == 3) {
         std::ifstream file(argv[2]);
         const std::string response((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());

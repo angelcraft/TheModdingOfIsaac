@@ -15,7 +15,14 @@ struct WorkshopItem {
     uint64_t file_size = 0;
     std::string preview_url;
     std::string description;
+    // SteamPipe Workshop content uses a manifest ID, not a direct URL.
+    uint64_t content_manifest_id = 0;
+    uint32_t workshop_file_type = 0;
 };
+
+enum class WorkshopDelivery { Unavailable, DirectHttps, SteamPipeManifest };
+// Classification only: a manifest ID is not a downloadable URL or CDN ticket.
+WorkshopDelivery workshop_delivery(const WorkshopItem& item);
 
 // Steam's QR login is a separate, experimental step from content downloading.
 // request_id is an opaque secret: never print or include it in the QR.

@@ -466,7 +466,8 @@ void install_workshop_item(PadState* pad, const std::string& target,
     if (target.empty()) { message = "Sin destino unico: falta mods o hay 2 rutas"; return; }
     if (item.download_url.empty()) {
         message = isaacnx::safe_console_text(item.title, 55) +
-                  ": sin URL publica. Usa ZIP en inbox.";
+                  (item.content_manifest_id ? ": SteamPipe detectado; descarga nativa pendiente." :
+                                              ": sin URL publica. Usa ZIP en inbox.");
         return;
     }
     if (!wait_confirm(pad, "Mod: " + item.title)) { message = "Cancelado"; return; }
@@ -511,7 +512,8 @@ void show_workshop_details(PadState* pad, const std::string& target,
     printf("%.130s\nID: %s\n\n", title.c_str(), item.id.c_str());
     printf("%.380s\n\n", description.empty() ? "Sin descripcion" : description.c_str());
     printf("Preview en Steam: %s\n", item.preview_url.empty() ? "no" : "si");
-    printf("Descarga HTTPS publica: %s\n\n", item.download_url.empty() ? "no" : "si");
+    printf("Descarga HTTPS publica: %s\n", item.download_url.empty() ? "no" : "si");
+    printf("Manifest SteamPipe: %s\n\n", item.content_manifest_id ? "detectado (aun sin descarga)" : "no");
     printf("[A] %s\n", item.download_url.empty() ? "Ver estado" : "Descargar ZIP publico");
     printf("[L] Bajar desde Android  [B] Volver\n");
     consoleUpdate(nullptr);

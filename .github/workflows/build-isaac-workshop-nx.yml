@@ -12,7 +12,15 @@ on:
   workflow_dispatch:
 
 jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate SteamPipe metadata and ZIP importer
+        working-directory: isaac-workshop-nx
+        run: make host-test
   build:
+    needs: host-tests
     runs-on: ubuntu-latest
     container:
       image: devkitpro/devkita64:20260219
@@ -26,6 +34,6 @@ jobs:
           make
       - uses: actions/upload-artifact@v4
         with:
-          name: IsaacWorkshopNX-0.4-native-steam-qr-experimental
+          name: IsaacWorkshopNX-0.4-plus-steampipe-detection-NO-NATIVE-DOWNLOAD
           path: isaac-workshop-nx/IsaacWorkshopNX.nro
           if-no-files-found: error

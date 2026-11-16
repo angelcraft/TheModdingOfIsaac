@@ -60,6 +60,28 @@ class IsaacWorkshopTests(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn("Isaac ★", p.stdout)
 
+    def delivery(self, **change):
+        data = {"response": {"publishedfiledetails": [{
+            "result": 1, "publishedfileid": "123", "consumer_app_id": 250900,
+            "title": "Isaac test", "file_url": "", "file_type": 0,
+        }]}}
+        data["response"]["publishedfiledetails"][0].update(change)
+        path = self.base / "delivery.json"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        return run("delivery", "123", path)
+
+    def test_steampipe_workshop_manifest_is_identified(self):
+        p = self.delivery(hcontent_file="1234567890123456789")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stdout.strip(), "steampipe:1234567890123456789")
+
+    def test_delivery_never_treats_manifest_as_direct_zip(self):
+        self.assertEqual(self.delivery(hcontent_file="12345", file_url="https://cdn.steam.test/mod.zip").stdout.strip(), "https")
+        self.assertEqual(self.delivery(hcontent_file="12345", file_url="http://untrusted.test/mod.zip").stdout.strip(), "steampipe:12345")
+        self.assertEqual(self.delivery(hcontent_file="18446744073709551616").stdout.strip(), "unavailable")
+        self.assertEqual(self.delivery(hcontent_file="123", file_type=2).stdout.strip(), "unavailable")
+        self.assertEqual(self.delivery(hcontent_file="0").stdout.strip(), "unavailable")
+
     def steam_auth(self, kind, response):
         path = self.base / "auth.json"
         path.write_text(json.dumps(response), encoding="utf-8")
