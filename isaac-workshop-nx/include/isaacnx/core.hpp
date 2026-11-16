@@ -36,6 +36,11 @@ bool parse_workshop_batch_response(const std::string& json,
                                    std::vector<WorkshopItem>& items,
                                    std::string& error);
 
+// A local-only Android bridge endpoint, e.g. http://192.168.1.10:8765/TOKEN.
+// No DNS, credentials, redirects, public IPs or arbitrary ports are accepted.
+bool parse_bridge_endpoint(const std::string& config, std::string& endpoint,
+                           std::string& error);
+
 // Strip control characters and bound text returned by the Workshop before
 // printing it to libnx's console.
 std::string safe_console_text(const std::string& text, size_t max_bytes);
