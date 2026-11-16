@@ -1,4 +1,5 @@
 #include "isaacnx/core.hpp"
+#include "isaacnx/cm_transport.hpp"
 #include "qrcodegen.h"
 
 #include <switch.h>
@@ -396,9 +397,57 @@ std::vector<std::string> inbox_files() {
     return files;
 }
 
+// Native CM connectivity diagnostic; no Steam account tokens are sent.
+bool fetch_steam_cm_servers(std::vector<std::string>& endpoints, std::string& error) {
+    CURL* curl = curl_easy_init();
+    if (!curl) { error = "Steam CM: no pude iniciar HTTPS"; return false; }
+    MemoryBuffer response;
+    response.limit = 128 * 1024;
+    curl_easy_setopt(curl, CURLOPT_URL,
+        "https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/");
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, memory_write);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    common_curl(curl);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
+    const CURLcode code = curl_easy_perform(curl);
+    long status = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
+    curl_easy_cleanup(curl);
+    if (code != CURLE_OK || status != 200 || response.excessive) {
+        error = "Steam CM: directorio HTTP " + std::to_string(status) +
+                " curl " + std::to_string(static_cast<int>(code));
+        return false;
+    }
+    return isaacnx::parse_cm_directory(response.data, endpoints, error);
+}
+
+void steam_cm_experiment() {
+    consoleClear();
+    printf("ISAAC WORKSHOP NX 0.5 | Steam CM / WSS\n");
+    printf("Solicitando servidores oficiales de Valve...\n");
+    consoleUpdate(nullptr);
+    std::vector<std::string> urls;
+    std::string error;
+    if (!fetch_steam_cm_servers(urls, error)) { message = error; return; }
+    for (size_t i = 0; i < urls.size() && i < 2; ++i) {
+        consoleClear();
+        printf("Steam CM WSS: comprobando TLS / Upgrade\n");
+        printf("Servidor %zu de %zu\n", i + 1, std::min(urls.size(), size_t(2)));
+        printf("%.90s\n\n", urls[i].c_str());
+        printf("No envia Steam Guard ni instala mods.\n");
+        consoleUpdate(nullptr);
+        if (isaacnx::probe_steam_cm_ws(urls[i], error)) {
+            message = "Steam CM conectado por WSS. Falta login y SteamPipe.";
+            return;
+        }
+    }
+    message = "Steam CM no conectado: " + error;
+}
+
 void display(const std::string& target, const std::vector<std::string>& list, size_t selected) {
     consoleClear();
-    printf("ISAAC WORKSHOP NX 0.4 EXP | Switch / Repentance\n");
+    printf("ISAAC WORKSHOP NX 0.5 EXP | Switch / Repentance\n");
     printf("=========================================\n");
     printf("Steam: buscar o consultar ID; ZIP: local\n\n");
     printf("Ruta activa:\n%.78s\n\n", target.empty() ? "NO ENCONTRADA" : target.c_str());
@@ -407,7 +456,7 @@ void display(const std::string& target, const std::vector<std::string>& list, si
     printf("[L] En ficha: descarga via Android\n");
     printf("[-] Prueba Steam Guard nativa (QR)\n");
     printf("[A] Instalar ZIP seleccionado\n");
-    printf("[Y] Actualizar lista  [+] Salir\n");
+    printf("[Y] Probar Steam CM WSS  [+] Salir\n");
     printf("[Arriba/Abajo] Seleccionar ZIP\n\n");
     printf("INBOX: sdmc:/switch/isaac_workshop_nx/inbox\n");
     if (list.empty()) printf("(No hay ZIPs en inbox)\n");
@@ -424,7 +473,7 @@ void display(const std::string& target, const std::vector<std::string>& list, si
 void display_search(const std::string& query,
                     const std::vector<isaacnx::WorkshopItem>& results, size_t selected) {
     consoleClear();
-    printf("ISAAC WORKSHOP NX 0.4 EXP | Busqueda Steam\n");
+    printf("ISAAC WORKSHOP NX 0.5 EXP | Busqueda Steam\n");
     printf("=========================================\n");
     printf("Buscando: %.62s\n", isaacnx::safe_console_text(query, 62).c_str());
     printf("[Arriba/Abajo] Elegir  [A] Detalles\n");
@@ -632,6 +681,8 @@ int main() {
             svcSleepThread(33'000'000);
             continue;
         }
+        if ((keys & HidNpadButton_Y) && networking) steam_cm_experiment();
+        if ((keys & HidNpadButton_Y) && !networking) message = "Sin red para Steam CM";
         if ((keys & HidNpadButton_Up) && selected) --selected;
         if ((keys & HidNpadButton_Down) && selected + 1 < list.size()) ++selected;
         if ((keys & HidNpadButton_X) && networking) lookup_and_install(&pad, target);

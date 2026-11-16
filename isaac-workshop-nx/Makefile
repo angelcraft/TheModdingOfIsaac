@@ -7,7 +7,7 @@ PORTLIBS := $(DEVKITPRO)/portlibs/switch
 
 SWITCH_CXX := $(DEVKITA64)/bin/aarch64-none-elf-g++
 SWITCH_CC := $(DEVKITA64)/bin/aarch64-none-elf-gcc
-SWITCH_OBJS := build/switch_main.o build/switch_core.o build/switch_zip.o build/switch_qr.o build/switch_cm_wire.o
+SWITCH_OBJS := build/switch_main.o build/switch_core.o build/switch_zip.o build/switch_qr.o build/switch_cm_wire.o build/switch_ws_wire.o build/switch_cm_transport.o
 # Match the official switch-examples application template: NROs are PIEs.
 # The earlier -fPIC build failed the strict -z text relocation check; this
 # tests the official -fPIE code-generation setting without suppressing it.
@@ -33,6 +33,12 @@ build/switch_core.o: source/core.cpp | build
 build/switch_cm_wire.o: source/cm_wire.cpp | build
 	$(SWITCH_CXX) $(SWITCH_CXXFLAGS) -c $< -o $@
 
+build/switch_ws_wire.o: source/ws_wire.cpp | build
+	$(SWITCH_CXX) $(SWITCH_CXXFLAGS) -c $< -o $@
+
+build/switch_cm_transport.o: source/cm_transport.cpp | build
+	$(SWITCH_CXX) $(SWITCH_CXXFLAGS) -c $< -o $@
+
 build/switch_zip.o: source/zip_install.cpp | build
 	$(SWITCH_CXX) $(SWITCH_CXXFLAGS) -c $< -o $@
 
@@ -43,7 +49,7 @@ $(APP).elf: $(SWITCH_OBJS)
 	$(SWITCH_CXX) $(SWITCH_LDFLAGS) $^ -Wl,--start-group -lcurl -lz -lnx -Wl,--end-group -o $@
 
 $(APP).nacp:
-	$(DEVKITPRO)/tools/bin/nacptool --create "Isaac Workshop NX" "angelcraft / Phylos" "0.4.0" $@
+	$(DEVKITPRO)/tools/bin/nacptool --create "Isaac Workshop NX" "angelcraft / Phylos" "0.5.0" $@
 
 $(APP).nro: $(APP).elf $(APP).nacp
 	$(DEVKITPRO)/tools/bin/elf2nro $(APP).elf $@ --nacp=$(APP).nacp
@@ -54,7 +60,9 @@ host-test: | build
 	./build/qr_smoke
 	g++ -std=c++17 -O2 -Wall -Wextra -Werror -Iinclude source/cm_wire.cpp tests/cm_wire_test.cpp -o build/cm_wire_test
 	./build/cm_wire_test
+	g++ -std=c++17 -O2 -Wall -Wextra -Werror -Iinclude source/ws_wire.cpp tests/ws_wire_test.cpp -o build/ws_wire_test
+	./build/ws_wire_test
 	python3 -m unittest discover -s tests -v
 
 clean:
-	rm -f $(APP).elf $(APP).nro $(APP).nacp build/switch_main.o build/switch_core.o build/switch_zip.o build/switch_qr.o build/switch_cm_wire.o build/host_cli build/qr_smoke build/cm_wire_test
+	rm -f $(APP).elf $(APP).nro $(APP).nacp build/switch_main.o build/switch_core.o build/switch_zip.o build/switch_qr.o build/switch_cm_wire.o build/switch_ws_wire.o build/switch_cm_transport.o build/host_cli build/qr_smoke build/cm_wire_test build/ws_wire_test
