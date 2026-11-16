@@ -1,0 +1,31 @@
+# Copy to .github/workflows/build-isaac-workshop-nx.yml in the existing
+# angelcraft/TheModdingOfIsaac repository. Deliberately restricted to the
+# isolated prototype branch so older experimental pipelines are not changed.
+name: Isaac Workshop NX - Build NRO
+on:
+  push:
+    branches:
+      - feature/isaac-workshop-nx-20261116
+    paths:
+      - 'isaac-workshop-nx/**'
+      - '.github/workflows/build-isaac-workshop-nx.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:20260219
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile Switch homebrew
+        working-directory: isaac-workshop-nx
+        run: |
+          test -f /opt/devkitpro/portlibs/switch/include/curl/curl.h
+          test -f /opt/devkitpro/portlibs/switch/include/zlib.h
+          make
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IsaacWorkshopNX-0.1-experimental
+          path: isaac-workshop-nx/IsaacWorkshopNX.nro
+          if-no-files-found: error
