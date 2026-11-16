@@ -82,6 +82,38 @@ class IsaacWorkshopTests(unittest.TestCase):
         self.assertEqual(self.delivery(hcontent_file="123", file_type=2).stdout.strip(), "unavailable")
         self.assertEqual(self.delivery(hcontent_file="0").stdout.strip(), "unavailable")
 
+    def cm_list(self, payload):
+        path = self.base / "cm.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return run("cm-list", path)
+
+    def test_cm_directory_accepts_only_steam_websockets(self):
+        entries = [
+            {"endpoint": "cmp1-sea1.steamserver.net:443", "type": "websockets"},
+            {"endpoint": "cmp1-sea1.steamserver.net:443", "type": "websockets"},
+            {"endpoint": "cm0.steampowered.com:27020", "type": "websockets"},
+            {"endpoint": "cmp1-sea1.steamserver.net:443", "type": "netfilter"},
+            {"endpoint": "evil.test:443", "type": "websockets"},
+            {"endpoint": "cmp1-sea1.steamserver.net.evil.test:443", "type": "websockets"},
+            {"endpoint": "127.0.0.1:8765", "type": "websockets"},
+            {"endpoint": "cmp1-sea1.steamserver.net/evil:443", "type": "websockets"},
+            {"endpoint": "cmp1-sea1.steamserver.net:999999", "type": "websockets"},
+        ]
+        p = self.cm_list({"response": {"success": True, "serverlist": entries}})
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stdout.splitlines(), [
+            "wss://cmp1-sea1.steamserver.net:443/cmsocket/",
+            "wss://cm0.steampowered.com:27020/cmsocket/",
+        ])
+
+    def test_cm_directory_fails_closed(self):
+        for response in (
+            {"success": False, "serverlist": []},
+            {"success": True, "serverlist": [{"endpoint": "evil.test:443", "type": "websockets"}]},
+            {"success": True, "serverlist": "bad"},
+        ):
+            self.assertNotEqual(self.cm_list({"response": response}).returncode, 0)
+
     def steam_auth(self, kind, response):
         path = self.base / "auth.json"
         path.write_text(json.dumps(response), encoding="utf-8")

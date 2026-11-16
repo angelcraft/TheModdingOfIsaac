@@ -24,6 +24,11 @@ enum class WorkshopDelivery { Unavailable, DirectHttps, SteamPipeManifest };
 // Classification only: a manifest ID is not a downloadable URL or CDN ticket.
 WorkshopDelivery workshop_delivery(const WorkshopItem& item);
 
+// Parse Steam's public CM directory response; returns verified WSS URLs only.
+// This does not authenticate, connect, or download content.
+bool parse_cm_directory(const std::string& json, std::vector<std::string>& urls,
+                        std::string& error);
+
 // Steam's QR login is a separate, experimental step from content downloading.
 // request_id is an opaque secret: never print or include it in the QR.
 struct SteamQrChallenge {

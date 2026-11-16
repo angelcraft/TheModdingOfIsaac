@@ -177,6 +177,58 @@ WorkshopDelivery workshop_delivery(const WorkshopItem& item) {
     return WorkshopDelivery::Unavailable;
 }
 
+bool parse_cm_directory(const std::string& json, std::vector<std::string>& urls,
+                        std::string& error) {
+    urls.clear();
+    Json root;
+    if (!parse_metadata_document(json, root, error)) return false;
+    const Json& response = root.at("response");
+    const Json& servers = response.at("serverlist");
+    const std::string success = response.at("success").text;
+    if ((success != "true" && success != "1") || servers.type != Json::Array) {
+        error = "Steam CM: directorio no disponible";
+        return false;
+    }
+    std::set<std::string> seen;
+    for (const auto& server : servers.entries) {
+        if (server.at("type").type != Json::String ||
+            server.at("type").text != "websockets" ||
+            server.at("endpoint").type != Json::String) continue;
+        const std::string& endpoint = server.at("endpoint").text;
+        if (endpoint.empty() || endpoint.size() > 127) continue;
+        const size_t colon = endpoint.rfind(':');
+        if (colon == std::string::npos || colon < 1 || colon == endpoint.size() - 1) continue;
+        const std::string host = endpoint.substr(0, colon);
+        const std::string port = endpoint.substr(colon + 1);
+        const uint64_t parsed_port = decimal(port);
+        if (!parsed_port || parsed_port > 65535 || port.size() > 5) continue;
+        constexpr const char* domains[] = {".steamserver.net", ".steampowered.com"};
+        bool trusted = false;
+        for (const char* suffix : domains) {
+            const std::string domain = suffix;
+            if (host.size() > domain.size() &&
+                host.compare(host.size() - domain.size(), domain.size(), domain) == 0)
+                trusted = true;
+        }
+        if (!trusted || host.front() == '-' || host.back() == '-' ||
+            host.front() == '.' || host.back() == '.' ||
+            host.find("..") != std::string::npos ||
+            !std::all_of(host.begin(), host.end(), [](char ch) {
+                return (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') ||
+                       ch == '.' || ch == '-';
+            })) continue;
+        const std::string url = "wss://" + endpoint + "/cmsocket/";
+        if (seen.insert(url).second) urls.push_back(url);
+        if (urls.size() >= 8) break;
+    }
+    if (urls.empty()) {
+        error = "Steam CM: sin servidores WSS de Valve validos";
+        return false;
+    }
+    error.clear();
+    return true;
+}
+
 bool parse_workshop_id(const std::string& input, std::string& id) {
     id.clear();
     std::string s = trim(input);
