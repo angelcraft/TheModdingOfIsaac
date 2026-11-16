@@ -209,8 +209,12 @@ bool is_directory(const std::string& path) {
 std::string select_installed_mod_root(const std::string& sd_root) {
     const std::string sd = sd_root + "/isaac_mods/mods";
     const std::string overlay = sd_root + "/atmosphere/contents/010021C000B6A000/romfs/isaac_mods/mods";
-    if (is_directory(sd)) return sd;
+    // The new runtime may choose the SD tree when both exist. Never silently
+    // install into either tree if we cannot prove which one the game uses.
+    if (is_directory(sd) && is_directory(overlay)) return {};
+    // Phylos' current installation uses the LayeredFS overlay path.
     if (is_directory(overlay)) return overlay;
+    if (is_directory(sd)) return sd;
     return {};
 }
 
