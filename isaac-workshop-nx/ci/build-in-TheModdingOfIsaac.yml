@@ -26,6 +26,6 @@ jobs:
           make
       - uses: actions/upload-artifact@v4
         with:
-          name: IsaacWorkshopNX-0.2-search-experimental
+          name: IsaacWorkshopNX-0.3-android-bridge-experimental
           path: isaac-workshop-nx/IsaacWorkshopNX.nro
           if-no-files-found: error
