@@ -39,6 +39,13 @@ Steam3Session.cs: QR, SteamClient, publicación, clave/código/CDN token.
 Protobufs: https://github.com/SteamTracking/Protobufs
 SteamKit: https://github.com/SteamRE/SteamKit
 
+## Capa de protocolo ya implementada
+Se añadió \`cm_wire.hpp/.cpp\` para codificar/decodificar las tramas
+protobuf de Steam CM (EMsg con flag, longitud de cabecera, cabecera y cuerpo).
+La capa no tiene acceso a credenciales ni red, acota tamaños y tiene tests
+con trama canónica, errores y entradas malformadas aleatorias. Aún falta
+implementar WebSocket TLS, protobuf de mensajes y gestión de sesión.
+
 ## Próxima tarea de implementación
 Crear un cliente **Steam CM** portátil para Horizon. Antes de acceder a
 contenido o guardar una sesión:

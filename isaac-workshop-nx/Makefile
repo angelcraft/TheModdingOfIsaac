@@ -7,7 +7,7 @@ PORTLIBS := $(DEVKITPRO)/portlibs/switch
 
 SWITCH_CXX := $(DEVKITA64)/bin/aarch64-none-elf-g++
 SWITCH_CC := $(DEVKITA64)/bin/aarch64-none-elf-gcc
-SWITCH_OBJS := build/switch_main.o build/switch_core.o build/switch_zip.o build/switch_qr.o
+SWITCH_OBJS := build/switch_main.o build/switch_core.o build/switch_zip.o build/switch_qr.o build/switch_cm_wire.o
 # Match the official switch-examples application template: NROs are PIEs.
 # The earlier -fPIC build failed the strict -z text relocation check; this
 # tests the official -fPIE code-generation setting without suppressing it.
@@ -30,6 +30,9 @@ build/switch_main.o: source/main.cpp | build
 build/switch_core.o: source/core.cpp | build
 	$(SWITCH_CXX) $(SWITCH_CXXFLAGS) -c $< -o $@
 
+build/switch_cm_wire.o: source/cm_wire.cpp | build
+	$(SWITCH_CXX) $(SWITCH_CXXFLAGS) -c $< -o $@
+
 build/switch_zip.o: source/zip_install.cpp | build
 	$(SWITCH_CXX) $(SWITCH_CXXFLAGS) -c $< -o $@
 
@@ -49,7 +52,9 @@ host-test: | build
 	g++ -std=c++17 -O2 -Wall -Wextra -Iinclude source/core.cpp source/zip_install.cpp tests/host_cli.cpp -lz -o build/host_cli
 	gcc -std=c11 -O2 -Wall -Wextra -Werror -Ithird_party tests/qr_smoke.c third_party/qrcodegen.c -o build/qr_smoke
 	./build/qr_smoke
+	g++ -std=c++17 -O2 -Wall -Wextra -Werror -Iinclude source/cm_wire.cpp tests/cm_wire_test.cpp -o build/cm_wire_test
+	./build/cm_wire_test
 	python3 -m unittest discover -s tests -v
 
 clean:
-	rm -f $(APP).elf $(APP).nro $(APP).nacp build/switch_main.o build/switch_core.o build/switch_zip.o build/switch_qr.o build/host_cli build/qr_smoke
+	rm -f $(APP).elf $(APP).nro $(APP).nacp build/switch_main.o build/switch_core.o build/switch_zip.o build/switch_qr.o build/switch_cm_wire.o build/host_cli build/qr_smoke build/cm_wire_test
