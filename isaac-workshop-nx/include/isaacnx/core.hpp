@@ -17,6 +17,29 @@ struct WorkshopItem {
     std::string description;
 };
 
+// Steam's QR login is a separate, experimental step from content downloading.
+// request_id is an opaque secret: never print or include it in the QR.
+struct SteamQrChallenge {
+    std::string client_id;
+    std::string request_id;
+    std::string challenge_url;
+    unsigned interval_seconds = 5;
+};
+
+struct SteamQrPoll {
+    bool confirmed = false;
+    bool interaction = false;
+    std::string account_name;
+    std::string new_client_id;
+    std::string new_challenge_url;
+};
+
+// Validate tightly bounded JSON envelopes; never return or log auth tokens.
+bool parse_steam_qr_begin(const std::string& json, SteamQrChallenge& challenge,
+                          std::string& error);
+bool parse_steam_qr_poll(const std::string& json, SteamQrPoll& poll,
+                         std::string& error);
+
 // Accepts a numeric Workshop ID or a steamcommunity.com sharedfiles URL.
 bool parse_workshop_id(const std::string& input, std::string& id);
 

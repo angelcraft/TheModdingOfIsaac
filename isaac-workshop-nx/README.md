@@ -1,4 +1,4 @@
-# Isaac Workshop NX — 0.3 (buscador y puente Android experimentales)
+# Isaac Workshop NX — 0.4 (Steam Guard nativo: prueba experimental)
 
 Gestor independiente de mods de **The Binding of Isaac: Repentance** para
 Nintendo Switch con Atmosphère. Código fuente incluido, sin mods de terceros,
@@ -6,6 +6,21 @@ sin archivos del juego y sin credenciales de Steam. No sustituye al runtime.
 
 ## Qué hace
 
+- **Nuevo en 0.4 EXP:** pulsa `-` en el NRO para solicitar a Steam un
+  desafío de autenticación por QR. El QR se genera **localmente** en la Switch
+  con la biblioteca MIT `qrcodegen` de Nayuki; nunca pasa por un servicio web
+  de códigos QR. Ábrelo con Steam Guard en tu móvil, confirma que el dispositivo
+  se identifica como **Isaac Workshop NX Switch**, y espera hasta 5 minutos.
+  La app solo muestra si Steam devuelve una confirmación: **descarga nativa de
+  Workshop todavía NO implementada**. No se guarda ni muestra el `request_id`,
+  la contraseña, los tokens de acceso ni el de actualización; la sesión se
+  descarta al terminar este ensayo. No publiques capturas de un QR pendiente.
+  Si la API rechaza la solicitud, la pantalla principal mostrará el código
+  HTTP/libcurl para investigar; el flujo real no se ha probado en hardware.
+- El protocolo de QR se ha contrastado con los mensajes
+  `CAuthentication_BeginAuthSessionViaQR` y `PollAuthSessionStatus` publicados
+  por SteamTracking/Protobufs. Se utiliza HTTPS certificado de Valve, sin
+  redirecciones; no se incorporan librerías .NET ni se guarda sesión alguna.
 - **Nuevo en 0.3:** desde la ficha de un mod pulsa `L` para recibir el ZIP
   preparado por tu Android, e instalarlo en Granule usando el mismo validador
   y carpeta de staging. Requiere el puente emparejado en la Wi-Fi local. **La
@@ -96,16 +111,24 @@ make host-test
 - No sobrescribe datos previos; al actualizar un mod, retira tú la versión
   anterior **después** de guardar una copia si lo deseas.
 
-**Estado real de 0.3:** 37 pruebas host y comprobacion sintactica del codigo de
-la consola superadas. El protocolo del puente se ha probado entre procesos
-locales, **no todavia con dos dispositivos reales ni con Steam autenticado**.
-No se ha verificado aun el NRO compilado de esta revision. La API oficial `QueryFiles`
+**Estado real de 0.4 EXP:** las pruebas del parser QR, del gestor ZIP y del
+puente se ejecutan en host; el flujo QR necesita comprobacion real en la Switch
+y puede requerir adaptar las solicitudes si Steam cambia el API.
+El puente Android ha sido probado por Phylos con Steam autenticado para
+descargar un ZIP real, pero el intercambio Wi-Fi entre Nubia/Switch fallo con
+`HTTP 0`. No debe confundirse con una prueba del cliente Steam nativo.
+La API oficial `QueryFiles`
 requiere clave Steamworks; como alternativa, la busqueda publica de Steam
 por HTML no necesita introducir contrasena, pero puede fallar por cambios de
 su sitio o limitaciones de acceso. La descarga autenticada universal necesita
 un cliente del protocolo de Steam, permisos adecuados y mas investigacion;
-**no hay inicio de sesion Steam ni SteamCMD integrados en Horizon**. El login
-se realiza por separado, en DepotDownloader desde Android.
+**todavia no hay cliente completo de Steam ni SteamCMD integrados en Horizon**.
+La v0.4 solo comprueba la autorizacion QR; la descarga completa se sigue
+realizando, por ahora, a traves de DepotDownloader en Android.
+
+Los ficheros `third_party/qrcodegen.c` y `.h` pertenecen a
+[Project Nayuki](https://github.com/nayuki/QR-Code-generator), licencia MIT
+incluida en sus cabeceras. No realizan solicitudes de red.
 
 ## Descargar mods de Steam con Android (sin PC)
 

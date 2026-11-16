@@ -25,6 +25,30 @@ int main(int argc, char** argv) {
         std::cout << item.id << "\n" << item.title << "\n" << item.download_url << '\n';
         return 0;
     }
+    if (cmd == "qr-begin" && argc == 3) {
+        std::ifstream file(argv[2]);
+        const std::string response((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        isaacnx::SteamQrChallenge challenge;
+        std::string error;
+        if (!isaacnx::parse_steam_qr_begin(response, challenge, error)) {
+            std::cerr << error << '\n'; return 1;
+        }
+        // The opaque request ID must never be printed.
+        std::cout << challenge.challenge_url << '\n' << challenge.interval_seconds << '\n';
+        return 0;
+    }
+    if (cmd == "qr-poll" && argc == 3) {
+        std::ifstream file(argv[2]);
+        const std::string response((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        isaacnx::SteamQrPoll poll;
+        std::string error;
+        if (!isaacnx::parse_steam_qr_poll(response, poll, error)) {
+            std::cerr << error << '\n'; return 1;
+        }
+        // Do not expose refresh/access tokens to the test runner.
+        std::cout << (poll.confirmed ? "confirmed" : "pending") << '\n';
+        return 0;
+    }
     if (cmd == "listing" && argc == 3) {
         std::ifstream file(argv[2]);
         std::string html((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());

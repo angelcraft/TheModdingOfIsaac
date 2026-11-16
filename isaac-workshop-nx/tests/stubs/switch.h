@@ -22,6 +22,7 @@ constexpr u64 HidNpadButton_Y = 1 << 3;
 constexpr u64 HidNpadButton_R = 1 << 4;
 constexpr u64 HidNpadButton_L = 1 << 8;
 constexpr u64 HidNpadButton_Plus = 1 << 5;
+constexpr u64 HidNpadButton_Minus = 1 << 9;
 constexpr u64 HidNpadButton_Up = 1 << 6;
 constexpr u64 HidNpadButton_Down = 1 << 7;
 

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <set>
@@ -200,6 +201,73 @@ bool parse_workshop_response(const std::string& json, const std::string& request
     if (entry.at("consumer_app_id").text != "250900") { error = "No pertenece a The Binding of Isaac"; return false; }
     if (entry.at("publishedfileid").text != requested_id) { error = "ID inesperado en la respuesta"; return false; }
     if (!valid_item(entry, requested_id, item)) { error = "Metadatos incompletos"; return false; }
+    return true;
+}
+
+bool parse_steam_qr_begin(const std::string& json, SteamQrChallenge& challenge,
+                          std::string& error) {
+    if (json.size() > 16384) { error = "Respuesta Steam QR excesiva"; return false; }
+    Json root;
+    if (!parse_metadata_document(json, root, error)) return false;
+    const Json& response = root.at("response");
+    const std::string id = response.at("client_id").text;
+    const std::string request = response.at("request_id").text;
+    const std::string url = response.at("challenge_url").text;
+    if ((response.at("client_id").type != Json::Number &&
+         response.at("client_id").type != Json::String) || !decimal(id) ||
+        response.at("request_id").type != Json::String ||
+        request.size() < 4 || request.size() > 512 ||
+        request.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-") != std::string::npos ||
+        response.at("challenge_url").type != Json::String ||
+        url.compare(0, 17, "https://s.team/q/") != 0 ||
+        url.size() > 200 || url.find_first_of(" \r\n\t#") != std::string::npos) {
+        error = "Steam no devolvio una sesion QR valida";
+        return false;
+    }
+    unsigned interval = 5;
+    const Json& interval_field = response.at("interval");
+    if (interval_field.type == Json::Number) {
+        char* end = nullptr;
+        const double parsed = std::strtod(interval_field.text.c_str(), &end);
+        if (end && *end == '\0' && parsed >= 2 && parsed <= 30) interval = static_cast<unsigned>(parsed + 0.99);
+    }
+    challenge = {id, request, url, interval};
+    return true;
+}
+
+bool parse_steam_qr_poll(const std::string& json, SteamQrPoll& poll,
+                         std::string& error) {
+    if (json.size() > 16384) { error = "Respuesta Steam Guard excesiva"; return false; }
+    Json root;
+    if (!parse_metadata_document(json, root, error)) return false;
+    const Json& response = root.at("response");
+    if (response.type != Json::Object) { error = "Steam Guard devolvio una respuesta invalida"; return false; }
+    SteamQrPoll candidate;
+    const Json& access = response.at("access_token");
+    const Json& refresh = response.at("refresh_token");
+    if ((access.type != Json::Null && access.type != Json::String) ||
+        (refresh.type != Json::Null && refresh.type != Json::String)) {
+        error = "Tokens Steam con formato invalido"; return false;
+    }
+    candidate.confirmed = access.type == Json::String && !access.text.empty() &&
+                          refresh.type == Json::String && !refresh.text.empty();
+    candidate.interaction = response.at("had_remote_interaction").text == "true";
+    if (response.at("account_name").type == Json::String)
+        candidate.account_name = safe_console_text(response.at("account_name").text, 45);
+    const std::string id = response.at("new_client_id").text;
+    const std::string url = response.at("new_challenge_url").text;
+    if (!id.empty()) {
+        if (!decimal(id)) { error = "Nuevo ID QR invalido"; return false; }
+        candidate.new_client_id = id;
+    }
+    if (!url.empty()) {
+        if (url.compare(0, 17, "https://s.team/q/") != 0 || url.size() > 200 ||
+            url.find_first_of(" \r\n\t#") != std::string::npos) {
+            error = "Nuevo enlace Steam Guard invalido"; return false;
+        }
+        candidate.new_challenge_url = url;
+    }
+    poll = std::move(candidate);
     return true;
 }
 

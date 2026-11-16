@@ -1,9 +1,11 @@
 #include "isaacnx/core.hpp"
+#include "qrcodegen.h"
 
 #include <switch.h>
 #include <curl/curl.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <dirent.h>
@@ -20,6 +22,7 @@ constexpr const char* kBridgeConfig = "sdmc:/switch/isaac_workshop_nx/bridge.txt
 constexpr size_t kMaxDownload = 32 * 1024 * 1024;
 constexpr size_t kMaxMetadata = 1024 * 1024;
 constexpr size_t kMaxBrowse = 3 * 1024 * 1024;
+constexpr size_t kMaxAuthResponse = 16 * 1024;
 std::string message = "Listo. Cierra Isaac antes de instalar.";
 
 struct MemoryBuffer { std::string data; size_t limit = kMaxMetadata; bool excessive = false; };
@@ -65,6 +68,132 @@ void common_curl(CURL* h) {
     curl_easy_setopt(h, CURLOPT_TIMEOUT, 40L);
     curl_easy_setopt(h, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(h, CURLOPT_ACCEPT_ENCODING, "");
+}
+
+// Uses Valve's public authentication service; no third-party QR website,
+// password, cookies, or personal Steam token is sent to another host.
+bool steam_auth_post(const char* url, const std::string& input,
+                     std::string& body, std::string& error) {
+    CURL* curl = curl_easy_init();
+    if (!curl) { error = "Steam Guard: no pude iniciar HTTPS"; return false; }
+    char* encoded = curl_easy_escape(curl, input.c_str(), static_cast<int>(input.size()));
+    if (!encoded) { curl_easy_cleanup(curl); error = "Steam Guard: fallo al preparar solicitud"; return false; }
+    const std::string form = "input_json=" + std::string(encoded);
+    curl_free(encoded);
+    MemoryBuffer response;
+    response.limit = kMaxAuthResponse;
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, form.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, memory_write);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    common_curl(curl);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 20L);
+    const CURLcode result = curl_easy_perform(curl);
+    long http = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http);
+    curl_easy_cleanup(curl);
+    if (result != CURLE_OK || http != 200 || response.excessive) {
+        error = "Steam Guard: HTTP " + std::to_string(http) +
+                " / curl " + std::to_string(static_cast<int>(result));
+        return false;
+    }
+    body.swap(response.data);
+    return true;
+}
+
+bool steam_qr_begin(isaacnx::SteamQrChallenge& challenge, std::string& error) {
+    // Platform 1 = Steam client. Future native CM/CDN support needs a client
+    // token, not browser cookies. Do not claim to be Valve's official client.
+    const std::string json = R"({"device_friendly_name":"Isaac Workshop NX Switch","platform_type":1,"device_details":{"device_friendly_name":"Isaac Workshop NX Switch","platform_type":1,"os_type":20},"website_id":"Client"})";
+    std::string response;
+    if (!steam_auth_post("https://api.steampowered.com/IAuthenticationService/BeginAuthSessionViaQR/v1/",
+                         json, response, error)) return false;
+    const bool ok = isaacnx::parse_steam_qr_begin(response, challenge, error);
+    std::fill(response.begin(), response.end(), '\0');
+    return ok;
+}
+
+bool steam_qr_poll(const isaacnx::SteamQrChallenge& challenge,
+                   isaacnx::SteamQrPoll& poll, std::string& error) {
+    const std::string json = "{\"client_id\":\"" + challenge.client_id +
+                             "\",\"request_id\":\"" + challenge.request_id + "\"}";
+    std::string response;
+    if (!steam_auth_post("https://api.steampowered.com/IAuthenticationService/PollAuthSessionStatus/v1/",
+                         json, response, error)) return false;
+    const bool ok = isaacnx::parse_steam_qr_poll(response, poll, error);
+    // The response can contain access/refresh tokens. This proof of concept
+    // checks approval only; never persists or prints those credentials.
+    std::fill(response.begin(), response.end(), '\0');
+    return ok;
+}
+
+void steam_qr_display(const isaacnx::SteamQrChallenge& challenge) {
+    consoleClear();
+    printf("ISAAC WORKSHOP NX | STEAM GUARD EXPERIMENTAL\n");
+    printf("Abre Steam Guard en el movil y escanea el QR:\n");
+    uint8_t temp[qrcodegen_BUFFER_LEN_FOR_VERSION(4)] {};
+    uint8_t qr[qrcodegen_BUFFER_LEN_FOR_VERSION(4)] {};
+    const bool encoded = qrcodegen_encodeText(challenge.challenge_url.c_str(), temp, qr,
+        qrcodegen_Ecc_LOW, qrcodegen_VERSION_MIN, 4, qrcodegen_Mask_AUTO, false);
+    if (encoded) {
+        const int size = qrcodegen_getSize(qr);
+        const int margin = size <= 29 ? 4 : 3;
+        for (int y = -margin; y < size + margin; ++y) {
+            for (int x = -margin; x < size + margin; ++x)
+                printf("%s", qrcodegen_getModule(qr, x, y) ? "\x1b[40m  " : "\x1b[47m  ");
+            printf("\x1b[0m\n");
+        }
+    } else {
+        printf("QR demasiado largo para la pantalla.\n");
+        printf("Enlace oficial: %.130s\n", challenge.challenge_url.c_str());
+    }
+    printf("[B] Cancelar | Solo comprobar acceso; aun no descarga\n");
+    consoleUpdate(nullptr);
+}
+
+void steam_qr_experiment(PadState* pad) {
+    consoleClear(); printf("Solicitando QR a Steam...\n"); consoleUpdate(nullptr);
+    isaacnx::SteamQrChallenge challenge;
+    std::string error;
+    if (!steam_qr_begin(challenge, error)) { message = error; return; }
+    steam_qr_display(challenge);
+    bool interaction = false;
+    bool completed = false;
+    bool cancelled = false;
+    const auto expiry = std::chrono::steady_clock::now() + std::chrono::minutes(5);
+    auto next_poll = std::chrono::steady_clock::now() +
+                     std::chrono::seconds(challenge.interval_seconds);
+    while (appletMainLoop() && std::chrono::steady_clock::now() < expiry) {
+        padUpdate(pad);
+        if (padGetButtonsDown(pad) & (HidNpadButton_B | HidNpadButton_Plus)) {
+            cancelled = true; break;
+        }
+        if (std::chrono::steady_clock::now() >= next_poll) {
+            isaacnx::SteamQrPoll result;
+            if (!steam_qr_poll(challenge, result, error)) break;
+            interaction = interaction || result.interaction;
+            if (result.confirmed) { completed = true; break; }
+            if (!result.new_client_id.empty()) challenge.client_id = result.new_client_id;
+            if (!result.new_challenge_url.empty() && result.new_challenge_url != challenge.challenge_url) {
+                challenge.challenge_url = result.new_challenge_url;
+                steam_qr_display(challenge);
+            }
+            next_poll = std::chrono::steady_clock::now() +
+                        std::chrono::seconds(challenge.interval_seconds);
+        }
+        svcSleepThread(100'000'000);
+    }
+    std::fill(challenge.request_id.begin(), challenge.request_id.end(), '\0');
+    if (completed)
+        message = "Steam Guard confirmado. Cliente de descarga nativo aun pendiente.";
+    else if (cancelled)
+        message = "Steam Guard cancelado. No se guardo ninguna sesion.";
+    else if (!error.empty())
+        message = error;
+    else
+        message = interaction ? "Steam Guard: hubo interaccion pero no confirmacion." :
+                                "Steam Guard: QR agotado tras 5 minutos.";
 }
 
 bool lookup_many(const std::vector<std::string>& ids,
@@ -269,13 +398,14 @@ std::vector<std::string> inbox_files() {
 
 void display(const std::string& target, const std::vector<std::string>& list, size_t selected) {
     consoleClear();
-    printf("ISAAC WORKSHOP NX 0.3 | Switch / Repentance\n");
+    printf("ISAAC WORKSHOP NX 0.4 EXP | Switch / Repentance\n");
     printf("=========================================\n");
     printf("Steam: buscar o consultar ID; ZIP: local\n\n");
     printf("Ruta activa:\n%.78s\n\n", target.empty() ? "NO ENCONTRADA" : target.c_str());
     printf("[X] Workshop ID o enlace Steam\n");
     printf("[R] Buscar mods por nombre\n");
     printf("[L] En ficha: descarga via Android\n");
+    printf("[-] Prueba Steam Guard nativa (QR)\n");
     printf("[A] Instalar ZIP seleccionado\n");
     printf("[Y] Actualizar lista  [+] Salir\n");
     printf("[Arriba/Abajo] Seleccionar ZIP\n\n");
@@ -294,7 +424,7 @@ void display(const std::string& target, const std::vector<std::string>& list, si
 void display_search(const std::string& query,
                     const std::vector<isaacnx::WorkshopItem>& results, size_t selected) {
     consoleClear();
-    printf("ISAAC WORKSHOP NX 0.3 | Busqueda Steam\n");
+    printf("ISAAC WORKSHOP NX 0.4 EXP | Busqueda Steam\n");
     printf("=========================================\n");
     printf("Buscando: %.62s\n", isaacnx::safe_console_text(query, 62).c_str());
     printf("[Arriba/Abajo] Elegir  [A] Detalles\n");
@@ -495,12 +625,16 @@ int main() {
                 show_workshop_details(&pad, target, results[selected_result]);
             if ((keys & HidNpadButton_R) && networking)
                 search_by_name(query, results, selected_result, showing_search);
+            if ((keys & HidNpadButton_Minus) && networking)
+                steam_qr_experiment(&pad);
             svcSleepThread(33'000'000);
             continue;
         }
         if ((keys & HidNpadButton_Up) && selected) --selected;
         if ((keys & HidNpadButton_Down) && selected + 1 < list.size()) ++selected;
         if ((keys & HidNpadButton_X) && networking) lookup_and_install(&pad, target);
+        if ((keys & HidNpadButton_Minus) && networking) steam_qr_experiment(&pad);
+        if ((keys & HidNpadButton_Minus) && !networking) message = "No se pudo iniciar la red";
         if ((keys & HidNpadButton_X) && !networking) message = "No se pudo iniciar la red";
         if ((keys & HidNpadButton_R) && networking)
             search_by_name(query, results, selected_result, showing_search);

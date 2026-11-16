@@ -60,6 +60,46 @@ class IsaacWorkshopTests(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn("Isaac ★", p.stdout)
 
+    def steam_auth(self, kind, response):
+        path = self.base / "auth.json"
+        path.write_text(json.dumps(response), encoding="utf-8")
+        return run(kind, path)
+
+    def test_steam_qr_begin_parses_only_safe_qr_url(self):
+        data = {"response": {"client_id": "76561198000000001", "request_id": "b64private+/=",
+                             "challenge_url": "https://s.team/q/1/ABC123", "interval": 5.4}}
+        p = self.steam_auth("qr-begin", data)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stdout.splitlines(), ["https://s.team/q/1/ABC123", "6"])
+        self.assertNotIn("b64private", p.stdout)
+
+    def test_steam_qr_begin_rejects_unsafe_challenges(self):
+        base = {"client_id": "76561198000000001", "request_id": "b64private+/=",
+                "challenge_url": "https://s.team/q/1/ABC123"}
+        for update in ({"challenge_url": "https://s.team.evil.test/q/1/ABC"},
+                       {"challenge_url": "javascript:alert(1)"},
+                       {"request_id": "private\nerror"},
+                       {"client_id": "not-a-number"},
+                       {"client_id": "18446744073709551616"}):
+            with self.subTest(update=update):
+                self.assertNotEqual(self.steam_auth("qr-begin", {"response": base | update}).returncode, 0)
+
+    def test_steam_qr_poll_does_not_log_tokens(self):
+        p = self.steam_auth("qr-poll", {"response": {
+            "access_token": "ACCESS_SECRET_123", "refresh_token": "REFRESH_SECRET_456", "account_name": "myaccount"}})
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stdout.strip(), "confirmed")
+        self.assertNotIn("SECRET", p.stdout + p.stderr)
+        self.assertEqual(self.steam_auth("qr-poll", {"response": {"had_remote_interaction": True}}).stdout.strip(), "pending")
+
+    def test_steam_qr_poll_rejects_invalid_types_and_urls(self):
+        for response in ({"refresh_token": ["oops"]},
+                         {"new_client_id": "NaN"},
+                         {"new_challenge_url": "http://s.team/q/1/notsecure"},
+                         {"account_name": "abc", "new_challenge_url": "https://notsteam.test/"}):
+            with self.subTest(response=response):
+                self.assertNotEqual(self.steam_auth("qr-poll", {"response": response}).returncode, 0)
+
     def test_emoji_in_steam_title(self):
         self.assertIn("🔥", self.metadata(title="Isaac 🔥").stdout)
 
