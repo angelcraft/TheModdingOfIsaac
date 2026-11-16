@@ -63,6 +63,52 @@ class IsaacWorkshopTests(unittest.TestCase):
     def test_emoji_in_steam_title(self):
         self.assertIn("🔥", self.metadata(title="Isaac 🔥").stdout)
 
+    def test_public_browse_listing_finds_ids_deduped_in_order(self):
+        html = '''<div class="workshopItemPreviewHolder"><a href="https://steamcommunity.com/sharedfiles/filedetails/?id=836319872&amp;searchtext=a">One</a></div>
+        <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=123456789&amp;x=y">Two</a>
+        <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=836319872">duplicate</a>'''
+        path = self.base / "browse.html"
+        path.write_text(html)
+        p = run("listing", path)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stdout.splitlines(), ["836319872", "123456789"])
+
+    def test_browse_html_rejects_bad_numeric_links_and_excess(self):
+        path = self.base / "browse.html"
+        path.write_text('filedetails/?id=0 filedetails/?id=999999999999999999999999 filedetails/?id=10abc')
+        self.assert_failure("listing", path)
+        with path.open("wb") as out:
+            out.truncate(3 * 1024 * 1024 + 1)
+        self.assert_failure("listing", path)
+
+    def test_browse_html_does_not_execute_markup(self):
+        path = self.base / "browse.html"
+        path.write_text('''<script>alert('bad')</script><a href="filedetails/?id=482">safe</a>''')
+        self.assertEqual(run("listing", path).stdout.strip(), "482")
+
+    def test_batch_metadata_validates_app_and_preserves_order(self):
+        def entry(id, app=250900, result=1):
+            return {"result": result, "publishedfileid": id, "consumer_app_id": app,
+                    "title": f"Item {id}", "preview_url": f"https://steamusercontent.test/{id}",
+                    "file_description": "A sample description"}
+        data = {"response": {"publishedfiledetails": [entry("333"), entry("222", 480), entry("111")]}}
+        path = self.base / "batch.json"
+        path.write_text(json.dumps(data))
+        p = run("batch", "111,222,333", path)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual([line.split(" | ")[0] for line in p.stdout.splitlines()], ["111", "333"])
+
+    def test_batch_wrong_id_and_duplicate_requested_ids_rejected(self):
+        data = {"response": {"publishedfiledetails": [
+            {"result": 1, "publishedfileid": "999", "consumer_app_id": 250900, "title": "bad"}]}}
+        path = self.base / "batch.json"
+        path.write_text(json.dumps(data))
+        self.assert_failure("batch", "123", path)
+        self.assert_failure("batch", "123,123", path)
+
+    def test_control_characters_stripped_before_console(self):
+        self.assertEqual(run("clean-text", "Nice\x1b[2J\n\tMod").stdout.strip(), "Nice [2J Mod")
+
     def test_wrong_game_rejected(self):
         self.assertNotEqual(self.metadata(consumer_app_id=480).returncode, 0)
 
