@@ -63,6 +63,14 @@ int main(int argc, char** argv) {
         std::cout << isaacnx::safe_console_text(argv[2], 100) << '\n';
         return 0;
     }
+    if (cmd == "bridge" && argc == 3) {
+        std::string endpoint, error;
+        if (!isaacnx::parse_bridge_endpoint(argv[2], endpoint, error)) {
+            std::cerr << error << '\n'; return 1;
+        }
+        std::cout << endpoint << '\n';
+        return 0;
+    }
     if (cmd == "root" && argc == 3) {
         std::cout << isaacnx::select_installed_mod_root(argv[2]) << '\n';
         return 0;
