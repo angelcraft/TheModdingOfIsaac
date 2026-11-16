@@ -18,16 +18,17 @@ constexpr const char* kAppRoot = "sdmc:/switch/isaac_workshop_nx";
 constexpr const char* kInbox = "sdmc:/switch/isaac_workshop_nx/inbox";
 constexpr size_t kMaxDownload = 32 * 1024 * 1024;
 constexpr size_t kMaxMetadata = 1024 * 1024;
+constexpr size_t kMaxBrowse = 3 * 1024 * 1024;
 std::string message = "Listo. Cierra Isaac antes de instalar.";
 
-struct MemoryBuffer { std::string data; bool excessive = false; };
+struct MemoryBuffer { std::string data; size_t limit = kMaxMetadata; bool excessive = false; };
 struct FileWriter { FILE* file; size_t length = 0; bool excessive = false; };
 
 size_t memory_write(char* ptr, size_t size, size_t count, void* user) {
     auto* dst = static_cast<MemoryBuffer*>(user);
     if (count && size > SIZE_MAX / count) return 0;
     const size_t n = size * count;
-    if (dst->data.size() > kMaxMetadata || n > kMaxMetadata - dst->data.size()) {
+    if (dst->data.size() > dst->limit || n > dst->limit - dst->data.size()) {
         dst->excessive = true; return 0;
     }
     dst->data.append(ptr, n);
@@ -47,16 +48,78 @@ size_t file_write(char* ptr, size_t size, size_t count, void* user) {
 }
 
 void common_curl(CURL* h) {
-    curl_easy_setopt(h, CURLOPT_USERAGENT, "IsaacWorkshopNX/0.1 (Switch homebrew)");
+    curl_easy_setopt(h, CURLOPT_USERAGENT, "IsaacWorkshopNX/0.2 (Switch homebrew)");
     curl_easy_setopt(h, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(h, CURLOPT_MAXREDIRS, 3L);
+#if LIBCURL_VERSION_NUM >= 0x075500
+    curl_easy_setopt(h, CURLOPT_PROTOCOLS_STR, "https");
+    curl_easy_setopt(h, CURLOPT_REDIR_PROTOCOLS_STR, "https");
+#else
     curl_easy_setopt(h, CURLOPT_PROTOCOLS, long(CURLPROTO_HTTPS));
     curl_easy_setopt(h, CURLOPT_REDIR_PROTOCOLS, long(CURLPROTO_HTTPS));
+#endif
     curl_easy_setopt(h, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(h, CURLOPT_SSL_VERIFYHOST, 2L);
     curl_easy_setopt(h, CURLOPT_CONNECTTIMEOUT, 10L);
     curl_easy_setopt(h, CURLOPT_TIMEOUT, 40L);
     curl_easy_setopt(h, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(h, CURLOPT_ACCEPT_ENCODING, "");
+}
+
+bool lookup_many(const std::vector<std::string>& ids,
+                 std::vector<isaacnx::WorkshopItem>& items, std::string& error) {
+    if (ids.empty() || ids.size() > 20) { error = "Lista de IDs invalida"; return false; }
+    CURL* curl = curl_easy_init();
+    if (!curl) { error = "No se pudo iniciar curl"; return false; }
+    std::string form = "itemcount=" + std::to_string(ids.size());
+    for (size_t i = 0; i < ids.size(); ++i)
+        form += "&publishedfileids%5B" + std::to_string(i) + "%5D=" + ids[i];
+    MemoryBuffer response;
+    curl_easy_setopt(curl, CURLOPT_URL, "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/");
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, form.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, memory_write);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    common_curl(curl);
+    CURLcode status = curl_easy_perform(curl);
+    long http = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http);
+    curl_easy_cleanup(curl);
+    if (status != CURLE_OK || http != 200) {
+        error = response.excessive ? "Lista demasiado grande" :
+                "No pude consultar Steam (HTTP " + std::to_string(http) + ")";
+        return false;
+    }
+    return isaacnx::parse_workshop_batch_response(response.data, ids, items, error);
+}
+
+bool search_workshop(const std::string& query, std::vector<isaacnx::WorkshopItem>& items,
+                     std::string& error) {
+    CURL* curl = curl_easy_init();
+    if (!curl) { error = "No se pudo iniciar curl"; return false; }
+    char* escaped = curl_easy_escape(curl, query.c_str(), static_cast<int>(query.size()));
+    if (!escaped) { curl_easy_cleanup(curl); error = "No se pudo codificar busqueda"; return false; }
+    const std::string url = "https://steamcommunity.com/workshop/browse/?appid=250900"
+                            "&browsesort=textsearch&section=readytouseitems&l=english&searchtext=" +
+                            std::string(escaped);
+    curl_free(escaped);
+    MemoryBuffer response;
+    response.limit = kMaxBrowse;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, memory_write);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    common_curl(curl);
+    CURLcode status = curl_easy_perform(curl);
+    long http = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http);
+    curl_easy_cleanup(curl);
+    if (status != CURLE_OK || http != 200) {
+        error = response.excessive ? "Pagina Steam demasiado grande" :
+                "Steam Workshop no disponible (HTTP " + std::to_string(http) + ")";
+        return false;
+    }
+    std::vector<std::string> ids;
+    if (!isaacnx::parse_workshop_listing(response.data, ids, error)) return false;
+    return lookup_many(ids, items, error);
 }
 
 bool read_workshop(const std::string& id, isaacnx::WorkshopItem& item, std::string& error) {
@@ -139,11 +202,12 @@ std::vector<std::string> inbox_files() {
 
 void display(const std::string& target, const std::vector<std::string>& list, size_t selected) {
     consoleClear();
-    printf("ISAAC WORKSHOP NX 0.1 | Switch / Repentance\n");
+    printf("ISAAC WORKSHOP NX 0.2 | Switch / Repentance\n");
     printf("=========================================\n");
-    printf("Steam: consultar por ID; ZIP: instalacion local\n\n");
+    printf("Steam: buscar o consultar ID; ZIP: local\n\n");
     printf("Ruta activa:\n%.78s\n\n", target.empty() ? "NO ENCONTRADA" : target.c_str());
     printf("[X] Workshop ID o enlace Steam\n");
+    printf("[R] Buscar mods por nombre\n");
     printf("[A] Instalar ZIP seleccionado\n");
     printf("[Y] Actualizar lista  [+] Salir\n");
     printf("[Arriba/Abajo] Seleccionar ZIP\n\n");
@@ -154,14 +218,40 @@ void display(const std::string& target, const std::vector<std::string>& list, si
         if (index >= list.size()) break;
         printf("%c %.66s\n", index == selected ? '>' : ' ', list[index].c_str());
     }
-    printf("\nEstado: %.100s\n", message.c_str());
+    printf("\nEstado: %.100s\n", isaacnx::safe_console_text(message, 140).c_str());
     printf("\nNo guarda contrasenas Steam. No toca Atmosphere.\n");
+    consoleUpdate(nullptr);
+}
+
+void display_search(const std::string& query,
+                    const std::vector<isaacnx::WorkshopItem>& results, size_t selected) {
+    consoleClear();
+    printf("ISAAC WORKSHOP NX 0.2 | Busqueda Steam\n");
+    printf("=========================================\n");
+    printf("Buscando: %.62s\n", isaacnx::safe_console_text(query, 62).c_str());
+    printf("[Arriba/Abajo] Elegir  [A] Detalles\n");
+    printf("[R] Otra busqueda  [B] Volver  [+] Salir\n\n");
+    const size_t base = selected / 7 * 7;
+    for (size_t i = base; i < results.size() && i < base + 7; ++i) {
+        const auto title = isaacnx::safe_console_text(results[i].title, 66);
+        printf("%c %2zu. %.66s\n", i == selected ? '>' : ' ', i + 1, title.c_str());
+    }
+    if (!results.empty()) {
+        const auto& item = results[selected];
+        const auto description = isaacnx::safe_console_text(item.description, 180);
+        printf("\nID: %s (%zu/%zu)\n", item.id.c_str(), selected + 1, results.size());
+        printf("Descripcion: %.180s\n", description.empty() ? "(Sin descripcion)" : description.c_str());
+        printf("Imagen Steam: %s\n", item.preview_url.empty() ? "no disponible" : "disponible");
+        printf("Descarga directa: %s\n", item.download_url.empty() ? "no" : "si");
+    }
+    printf("\nEstado: %.100s\n", isaacnx::safe_console_text(message, 120).c_str());
     consoleUpdate(nullptr);
 }
 
 bool wait_confirm(PadState* pad, const std::string& title) {
     consoleClear();
-    printf("%.85s\n\n[A] Descargar e instalar   [B] Cancelar\n", title.c_str());
+    printf("%.85s\n\n[A] Descargar e instalar   [B] Cancelar\n",
+           isaacnx::safe_console_text(title, 85).c_str());
     consoleUpdate(nullptr);
     while (appletMainLoop()) {
         padUpdate(pad);
@@ -171,6 +261,79 @@ bool wait_confirm(PadState* pad, const std::string& title) {
         svcSleepThread(16'000'000);
     }
     return false;
+}
+
+void install_workshop_item(PadState* pad, const std::string& target,
+                           const isaacnx::WorkshopItem& item) {
+    if (target.empty()) { message = "Sin destino unico: falta mods o hay 2 rutas"; return; }
+    if (item.download_url.empty()) {
+        message = isaacnx::safe_console_text(item.title, 55) +
+                  ": sin URL publica. Usa ZIP en inbox.";
+        return;
+    }
+    if (!wait_confirm(pad, "Mod: " + item.title)) { message = "Cancelado"; return; }
+    consoleClear();
+    printf("Descargando %.70s ...\n", isaacnx::safe_console_text(item.title, 70).c_str());
+    consoleUpdate(nullptr);
+    std::string archive, error;
+    if (!download_public_zip(item, archive, error)) { message = error; return; }
+    if (!isaacnx::install_zip(archive, target, "steam_" + item.id, error)) {
+        message = error + ". ZIP conservado en inbox.";
+        return;
+    }
+    message = "Instalado: " + isaacnx::safe_console_text(item.title, 64) + ". Reinicia Isaac.";
+}
+
+void show_workshop_details(PadState* pad, const std::string& target,
+                           const isaacnx::WorkshopItem& item) {
+    consoleClear();
+    const std::string title = isaacnx::safe_console_text(item.title, 130);
+    const std::string description = isaacnx::safe_console_text(item.description, 380);
+    printf("STEAM WORKSHOP | Isaac Repentance\n");
+    printf("=======================================\n");
+    printf("%.130s\nID: %s\n\n", title.c_str(), item.id.c_str());
+    printf("%.380s\n\n", description.empty() ? "Sin descripcion" : description.c_str());
+    printf("Preview en Steam: %s\n", item.preview_url.empty() ? "no" : "si");
+    printf("Descarga HTTPS publica: %s\n\n", item.download_url.empty() ? "no" : "si");
+    printf("[A] %s  [B] Volver\n", item.download_url.empty() ? "Ver estado" : "Descargar e instalar");
+    consoleUpdate(nullptr);
+    while (appletMainLoop()) {
+        padUpdate(pad);
+        const u64 keys = padGetButtonsDown(pad);
+        if (keys & (HidNpadButton_B | HidNpadButton_Plus)) return;
+        if (keys & HidNpadButton_A) {
+            install_workshop_item(pad, target, item);
+            return;
+        }
+        svcSleepThread(16'000'000);
+    }
+}
+
+void search_by_name(std::string& query,
+                    std::vector<isaacnx::WorkshopItem>& results, size_t& selected,
+                    bool& showing_search) {
+    SwkbdConfig keyboard;
+    Result rc = swkbdCreate(&keyboard, 0);
+    if (R_FAILED(rc)) { message = "No abre teclado; revisa dns.mitm"; return; }
+    swkbdConfigMakePresetDefault(&keyboard);
+    swkbdConfigSetHeaderText(&keyboard, "Buscar mods de Isaac por nombre");
+    char typed[128] {};
+    rc = swkbdShow(&keyboard, typed, sizeof(typed));
+    swkbdClose(&keyboard);
+    if (R_FAILED(rc) || !typed[0]) { message = "Busqueda cancelada"; return; }
+    const std::string pending_query = typed;
+    if (pending_query.size() > 64) { message = "Busqueda demasiado larga (max 64 bytes)"; return; }
+    consoleClear();
+    printf("Buscando %.64s en Steam Workshop ...\n", isaacnx::safe_console_text(pending_query, 64).c_str());
+    consoleUpdate(nullptr);
+    std::vector<isaacnx::WorkshopItem> found;
+    std::string error;
+    if (!search_workshop(pending_query, found, error)) { message = error; return; }
+    query = pending_query;
+    results = std::move(found);
+    selected = 0;
+    showing_search = true;
+    message = "Resultados verificados para The Binding of Isaac";
 }
 
 void lookup_and_install(PadState* pad, const std::string& target) {
@@ -190,19 +353,7 @@ void lookup_and_install(PadState* pad, const std::string& target) {
     std::string error;
     consoleClear(); printf("Consultando Steam: %s ...\n", id.c_str()); consoleUpdate(nullptr);
     if (!read_workshop(id, item, error)) { message = error; return; }
-    if (item.download_url.empty()) {
-        message = item.title + ": sin URL publica. Usa ZIP en inbox.";
-        return;
-    }
-    if (!wait_confirm(pad, "Mod: " + item.title)) { message = "Cancelado"; return; }
-    consoleClear(); printf("Descargando %s ...\n", item.title.c_str()); consoleUpdate(nullptr);
-    std::string archive;
-    if (!download_public_zip(item, archive, error)) { message = error; return; }
-    if (!isaacnx::install_zip(archive, target, "steam_" + id, error)) {
-        message = error + ". ZIP conservado en inbox.";
-        return;
-    }
-    message = "Instalado: " + item.title + ". Reinicia Isaac.";
+    show_workshop_details(pad, target, item);
 }
 
 void install_selected(const std::string& target, const std::string& name) {
@@ -232,17 +383,36 @@ int main() {
     bool networking = R_SUCCEEDED(sockets) && curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK;
     if (!networking) message = "Red no disponible; importacion ZIP sigue operativa";
     size_t selected = 0;
+    size_t selected_result = 0;
+    bool showing_search = false;
+    std::string query;
+    std::vector<isaacnx::WorkshopItem> results;
     while (appletMainLoop()) {
         auto list = inbox_files();
         if (selected >= list.size()) selected = list.empty() ? 0 : list.size() - 1;
-        display(target, list, selected);
+        if (showing_search) display_search(query, results, selected_result);
+        else display(target, list, selected);
         padUpdate(&pad);
         u64 keys = padGetButtonsDown(&pad);
         if (keys & HidNpadButton_Plus) break;
+        if (showing_search) {
+            if ((keys & HidNpadButton_Up) && selected_result) --selected_result;
+            if ((keys & HidNpadButton_Down) && selected_result + 1 < results.size()) ++selected_result;
+            if (keys & HidNpadButton_B) showing_search = false;
+            if ((keys & HidNpadButton_A) && !results.empty())
+                show_workshop_details(&pad, target, results[selected_result]);
+            if ((keys & HidNpadButton_R) && networking)
+                search_by_name(query, results, selected_result, showing_search);
+            svcSleepThread(33'000'000);
+            continue;
+        }
         if ((keys & HidNpadButton_Up) && selected) --selected;
         if ((keys & HidNpadButton_Down) && selected + 1 < list.size()) ++selected;
         if ((keys & HidNpadButton_X) && networking) lookup_and_install(&pad, target);
         if ((keys & HidNpadButton_X) && !networking) message = "No se pudo iniciar la red";
+        if ((keys & HidNpadButton_R) && networking)
+            search_by_name(query, results, selected_result, showing_search);
+        if ((keys & HidNpadButton_R) && !networking) message = "No se pudo iniciar la red";
         if ((keys & HidNpadButton_A) && !list.empty()) install_selected(target, list[selected]);
         svcSleepThread(33'000'000);
     }
