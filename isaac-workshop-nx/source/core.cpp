@@ -5,6 +5,7 @@
 #include <cerrno>
 #include <cstring>
 #include <map>
+#include <set>
 #include <sys/stat.h>
 
 namespace isaacnx {
@@ -138,6 +139,26 @@ uint64_t decimal(const std::string& s) {
     return value;
 }
 
+bool parse_metadata_document(const std::string& json, Json& root, std::string& error) {
+    if (json.size() > 1024 * 1024) { error = "Respuesta demasiado grande"; return false; }
+    Parser parser(json);
+    if (!parser.parse(root)) { error = "JSON de Steam no valido"; return false; }
+    parser.ws();
+    if (parser.p != json.size()) { error = "Datos extra despues del JSON"; return false; }
+    return true;
+}
+
+bool valid_item(const Json& entry, const std::string& requested_id, WorkshopItem& item) {
+    if (entry.type != Json::Object || entry.at("result").text != "1" ||
+        entry.at("consumer_app_id").text != "250900" ||
+        entry.at("publishedfileid").text != requested_id ||
+        entry.at("title").type != Json::String || entry.at("title").text.empty()) return false;
+    item = {requested_id, entry.at("title").text, entry.at("file_url").text, 250900,
+            decimal(entry.at("file_size").text), entry.at("preview_url").text,
+            entry.at("file_description").text};
+    return true;
+}
+
 } // namespace
 
 bool parse_workshop_id(const std::string& input, std::string& id) {
@@ -170,23 +191,89 @@ bool parse_workshop_id(const std::string& input, std::string& id) {
 
 bool parse_workshop_response(const std::string& json, const std::string& requested_id,
                              WorkshopItem& item, std::string& error) {
-    if (json.size() > 1024 * 1024) { error = "Respuesta demasiado grande"; return false; }
-    Parser parser(json); Json root;
-    if (!parser.parse(root)) { error = "JSON de Steam no valido"; return false; }
-    parser.ws();
-    if (parser.p != json.size()) { error = "Datos extra despues del JSON"; return false; }
+    Json root;
+    if (!parse_metadata_document(json, root, error)) return false;
     const Json& files = root.at("response").at("publishedfiledetails");
     if (files.type != Json::Array || files.entries.size() != 1) { error = "Steam no devolvio el mod"; return false; }
     const Json& entry = files.entries[0];
     if (entry.at("result").text != "1") { error = "Mod privado/eliminado o no disponible"; return false; }
     if (entry.at("consumer_app_id").text != "250900") { error = "No pertenece a The Binding of Isaac"; return false; }
     if (entry.at("publishedfileid").text != requested_id) { error = "ID inesperado en la respuesta"; return false; }
-    if (entry.at("title").type != Json::String || entry.at("title").text.empty()) {
-        error = "El mod no tiene titulo"; return false;
-    }
-    item = {requested_id, entry.at("title").text, entry.at("file_url").text, 250900,
-            decimal(entry.at("file_size").text)};
+    if (!valid_item(entry, requested_id, item)) { error = "Metadatos incompletos"; return false; }
     return true;
+}
+
+bool parse_workshop_listing(const std::string& html, std::vector<std::string>& ids,
+                            std::string& error) {
+    ids.clear();
+    if (html.size() > 3 * 1024 * 1024) { error = "Pagina de busqueda demasiado grande"; return false; }
+    const std::string marker = "filedetails/?id=";
+    std::set<std::string> seen;
+    size_t pos = 0;
+    while ((pos = html.find(marker, pos)) != std::string::npos) {
+        pos += marker.size();
+        const size_t start = pos;
+        while (pos < html.size() && html[pos] >= '0' && html[pos] <= '9') ++pos;
+        const std::string id = html.substr(start, pos - start);
+        // IDs must fit uint64_t. The following byte must delimit the ID,
+        // not be an alphabetic suffix crafted to spoof a valid link.
+        if (!id.empty() && digits(id) && decimal(id) &&
+            (pos == html.size() || html[pos] == '&' || html[pos] == '"' ||
+             html[pos] == '\'' || html[pos] == '<' || html[pos] == '/' ||
+             html[pos] == '?' || std::isspace(static_cast<unsigned char>(html[pos])))) {
+            if (seen.insert(id).second) ids.push_back(id);
+            if (ids.size() >= 20) break;
+        }
+        if (pos == start) ++pos;
+    }
+    if (ids.empty()) { error = "Sin resultados; Steam puede limitar la busqueda"; return false; }
+    return true;
+}
+
+bool parse_workshop_batch_response(const std::string& json,
+                                   const std::vector<std::string>& requested_ids,
+                                   std::vector<WorkshopItem>& items, std::string& error) {
+    items.clear();
+    if (requested_ids.empty() || requested_ids.size() > 20) {
+        error = "Cantidad de resultados no valida"; return false;
+    }
+    std::set<std::string> unique;
+    for (const auto& id : requested_ids) {
+        if (!digits(id) || !decimal(id) || !unique.insert(id).second) {
+            error = "IDs de busqueda no validos"; return false;
+        }
+    }
+    Json root;
+    if (!parse_metadata_document(json, root, error)) return false;
+    const Json& files = root.at("response").at("publishedfiledetails");
+    if (files.type != Json::Array || files.entries.size() != requested_ids.size()) {
+        error = "Steam devolvio una lista inesperada"; return false;
+    }
+    std::map<std::string, WorkshopItem> verified;
+    for (const auto& entry : files.entries) {
+        const std::string id = entry.at("publishedfileid").text;
+        if (!unique.count(id)) { error = "Steam devolvio un ID inesperado"; return false; }
+        WorkshopItem item;
+        if (valid_item(entry, id, item)) verified.emplace(id, std::move(item));
+    }
+    for (const auto& id : requested_ids) {
+        auto it = verified.find(id);
+        if (it != verified.end()) items.push_back(std::move(it->second));
+    }
+    if (items.empty()) { error = "No hay resultados publicos de Isaac"; return false; }
+    return true;
+}
+
+std::string safe_console_text(const std::string& text, size_t max_bytes) {
+    std::string result;
+    for (unsigned char c : text) {
+        if (result.size() >= max_bytes) break;
+        if (c < 0x20 || c == 0x7f) c = ' ';
+        if (c == ' ' && (result.empty() || result.back() == ' ')) continue;
+        result += static_cast<char>(c);
+    }
+    while (!result.empty() && result.back() == ' ') result.pop_back();
+    return result;
 }
 
 std::string safe_slug(const std::string& text) {
