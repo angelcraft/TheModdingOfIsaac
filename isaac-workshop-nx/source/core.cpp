@@ -264,6 +264,51 @@ bool parse_workshop_batch_response(const std::string& json,
     return true;
 }
 
+bool parse_bridge_endpoint(const std::string& config, std::string& endpoint,
+                           std::string& error) {
+    endpoint.clear();
+    const std::string text = trim(config);
+    const std::string scheme = "http://";
+    if (text.size() > 120 || text.compare(0, scheme.size(), scheme) != 0) {
+        error = "Puente: usa HTTP con IP Wi-Fi privada"; return false;
+    }
+    const size_t colon = text.find(':', scheme.size());
+    if (colon == std::string::npos || text.substr(colon, 6) != ":8765/") {
+        error = "Puente: puerto debe ser 8765"; return false;
+    }
+    const std::string ip = text.substr(scheme.size(), colon - scheme.size());
+    std::vector<unsigned> octets;
+    size_t start = 0;
+    while (start < ip.size()) {
+        const size_t dot = ip.find('.', start);
+        const size_t end = dot == std::string::npos ? ip.size() : dot;
+        const std::string part = ip.substr(start, end - start);
+        if (part.empty() || part.size() > 3 ||
+            (part.size() > 1 && part[0] == '0') ||
+            part.find_first_not_of("0123456789") != std::string::npos) {
+            error = "Puente: direccion IPv4 no valida"; return false;
+        }
+        unsigned octet = 0;
+        for (char c : part) octet = octet * 10 + static_cast<unsigned>(c - '0');
+        if (octet > 255) { error = "Puente: octeto fuera de rango"; return false; }
+        octets.push_back(octet);
+        if (dot == std::string::npos) break;
+        start = dot + 1;
+    }
+    if (octets.size() != 4 || !(
+        octets[0] == 10 || (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31) ||
+        (octets[0] == 192 && octets[1] == 168))) {
+        error = "Puente: IP fuera de la red privada permitida"; return false;
+    }
+    const std::string token = text.substr(colon + 6);
+    if (token.size() < 24 || token.size() > 64 ||
+        token.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-") != std::string::npos) {
+        error = "Puente: codigo de emparejamiento invalido"; return false;
+    }
+    endpoint = text;
+    return true;
+}
+
 std::string safe_console_text(const std::string& text, size_t max_bytes) {
     std::string result;
     for (unsigned char c : text) {
