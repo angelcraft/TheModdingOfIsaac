@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -12,6 +13,8 @@ struct WorkshopItem {
     std::string download_url;
     uint32_t app_id = 0;
     uint64_t file_size = 0;
+    std::string preview_url;
+    std::string description;
 };
 
 // Accepts a numeric Workshop ID or a steamcommunity.com sharedfiles URL.
@@ -20,6 +23,22 @@ bool parse_workshop_id(const std::string& input, std::string& id);
 // Steam Web API response. Rejects errors and items from games other than Isaac.
 bool parse_workshop_response(const std::string& json, const std::string& requested_id,
                              WorkshopItem& item, std::string& error);
+
+// Parse IDs from Steam's public Workshop browse HTML. HTML is only used for
+// discovery; all results are rechecked against Isaac's AppID by the Web API.
+bool parse_workshop_listing(const std::string& html, std::vector<std::string>& ids,
+                            std::string& error);
+
+// Metadata from a single bulk Web API response. Results are returned in the
+// requested order; unavailable/other-game items are discarded.
+bool parse_workshop_batch_response(const std::string& json,
+                                   const std::vector<std::string>& requested_ids,
+                                   std::vector<WorkshopItem>& items,
+                                   std::string& error);
+
+// Strip control characters and bound text returned by the Workshop before
+// printing it to libnx's console.
+std::string safe_console_text(const std::string& text, size_t max_bytes);
 
 // Returns a safe basename for an imported archive. Never a path component.
 std::string safe_slug(const std::string& text);
