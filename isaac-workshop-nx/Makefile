@@ -7,11 +7,15 @@ PORTLIBS := $(DEVKITPRO)/portlibs/switch
 
 SWITCH_CXX := $(DEVKITA64)/bin/aarch64-none-elf-g++
 SWITCH_OBJS := build/switch_main.o build/switch_core.o build/switch_zip.o
+# Match the official switch-examples application template: NROs are PIEs.
+# The earlier -fPIC build failed the strict -z text relocation check; this
+# tests the official -fPIE code-generation setting without suppressing it.
+SWITCH_ARCH := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 SWITCH_CXXFLAGS := -std=gnu++17 -O2 -Wall -Wextra -D__SWITCH__ -ffunction-sections -fdata-sections \
-	-march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIC -ftls-model=local-exec \
+	$(SWITCH_ARCH) \
 	-Iinclude -I$(PORTLIBS)/include -I$(DEVKITPRO)/libnx/include
 SWITCH_LDFLAGS := -specs=$(DEVKITPRO)/libnx/switch.specs -Wl,--gc-sections \
-	-march=armv8-a+crc+crypto -L$(PORTLIBS)/lib -L$(DEVKITPRO)/libnx/lib
+	$(SWITCH_ARCH) -L$(PORTLIBS)/lib -L$(DEVKITPRO)/libnx/lib
 
 .PHONY: all clean host-test
 all: $(APP).nro
