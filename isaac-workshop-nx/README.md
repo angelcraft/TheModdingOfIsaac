@@ -16,8 +16,12 @@ sin archivos del juego y sin credenciales de Steam. No sustituye al runtime.
   única carpeta envoltorio. Para instalar otros formatos, descomprímelos
   primero fuera de la consola y prepara un ZIP normal.
 - Detecta automáticamente el destino existente que usa `isaac-mod-runtime`:
-  1. `sdmc:/isaac_mods/mods/` (si **ya existe**, prioridad del runtime nuevo).
-  2. `sdmc:/atmosphere/contents/010021C000B6A000/romfs/isaac_mods/mods/`.
+  1. `sdmc:/atmosphere/contents/010021C000B6A000/romfs/isaac_mods/mods/`
+     (ruta confirmada por Phylos).
+  2. `sdmc:/isaac_mods/mods/` (otra opción del runtime nuevo).
+- Si ambas rutas existen, **bloquea la instalación**: el runtime nuevo puede
+  elegir la segunda aunque el usuario esté usando la primera. No se borra ni
+  mueve ninguna de ellas hasta aclararlo.
 - No crea por su cuenta la primera ruta, porque activarla ocultaría el árbol
   de mods del overlay anterior. No sobrescribe carpetas existentes.
 - Crea staging bajo la carpeta elegida y lo mueve solo cuando se validó todo.
