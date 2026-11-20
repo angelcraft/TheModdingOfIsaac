@@ -60,6 +60,6 @@ jobs:
           make
       - uses: actions/upload-artifact@v4
         with:
-          name: IsaacWorkshopNX-0.7-CM-QR-session-NO-NATIVE-DOWNLOAD
+          name: IsaacWorkshopNX-0.10-CDN-manifest-NO-MOD-INSTALL
           path: isaac-workshop-nx/IsaacWorkshopNX.nro
           if-no-files-found: error

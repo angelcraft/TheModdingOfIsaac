@@ -1,4 +1,4 @@
-# Isaac Workshop NX — 0.9 (SteamPipe manifest experimental)
+# Isaac Workshop NX — 0.10 (SteamPipe CDN manifest experimental)
 
 Gestor independiente de mods de **The Binding of Isaac: Repentance** para
 Nintendo Switch con Atmosphère. Código fuente incluido, sin mods de terceros,
@@ -258,3 +258,24 @@ GitHub Actions vuelve a fallar antes de compilar el NRO, aunque
 las pruebas en host Linux pasan (46 pruebas Python, 4 baterías
 de 20.000 entradas malformadas de protocolo). Hasta que no se solucione
 el fallo de Actions no hay binario 0.9 listo para la Switch.
+
+
+## 0.10 — lectura del manifiesto desde la Switch (experimental)
+
+Tras aceptar el QR de Steam Guard en la ficha de un mod (`-`), el programa
+consulta a Valve los servidores HTTPS de SteamPipe, abre una sesión CM
+con el token temporal, solicita el código del manifiesto del mod y, si Steam
+lo autoriza, intenta descargar **el manifiesto** desde el CDN. Inspecciona
+el contenedor ZIP/SteamPipe, comprueba el depot 250900 y el ID del manifiesto,
+y muestra cuántos archivos declara. La respuesta se queda solo en RAM.
+
+**Todavía NO descarga los chunks ni instala mods SteamPipe.** Faltan descifrar
+rutas, descargar/desencriptar/descomprimir los chunks, verificar hashes y
+hacer instalación atómica. La descarga manual de ZIP y el puente Android
+siguen disponibles. No se guardan tokens Steam, claves, códigos temporales
+ni contenido propietario en el repositorio.
+
+Estado de validación: pruebas host y sanitizers locales superadas; la
+compilación ARM64 se verifica en GitHub Actions. El flujo CDN todavía debe
+probarse en Switch real. Si muestra un error HTTP del CDN, comunica solo
+el código HTTP, nunca el enlace que contiene el código secreto.

@@ -52,6 +52,17 @@ int main(int argc, char** argv) {
         for (const auto& url : urls) std::cout << url << '\n';
         return 0;
     }
+    if (cmd == "cdn-list" && argc == 3) {
+        std::ifstream file(argv[2]);
+        const std::string response((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        std::vector<std::string> urls;
+        std::string error;
+        if (!isaacnx::parse_steam_content_directory(response, urls, error)) {
+            std::cerr << error << '\n'; return 1;
+        }
+        for (const auto& url : urls) std::cout << url << '\n';
+        return 0;
+    }
     if (cmd == "qr-begin" && argc == 3) {
         std::ifstream file(argv[2]);
         const std::string response((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
@@ -136,3 +147,4 @@ int main(int argc, char** argv) {
     }
     return 2;
 }
+

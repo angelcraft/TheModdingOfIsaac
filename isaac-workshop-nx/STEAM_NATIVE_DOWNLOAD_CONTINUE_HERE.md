@@ -102,3 +102,27 @@ No authenticated Steam CM session, depot key, manifest request code, CDN chunks,
   CDN fetch using authorized code, decoding signed SteamPipe manifest
   and encrypted filenames, content chunk download and integrity tests,
   then atomic staging into Isaac mod path. Do not claim download works.
+
+
+## 2026-11-20 — 0.10 CDN manifest fetch (source milestone)
+
+- SteamPipe directory GET `IContentServerDirectoryService/GetServersForSteamPipe/v1/`;
+  strict bounded JSON and allowlist of Steam-owned HTTPS hostnames (no redirect).
+- Steam CM authenticated session now passes short-lived manifest request code
+  and depot key to an RAII in-memory ticket; both wiped on scope exit. Never
+  printed, logged or stored. Previous auth-only functions remain callable.
+- Uses `/depot/250900/manifest/<gid>/5/<code>` on at most four CDN servers.
+  Response is bounded to 8 MiB. Raw protobuf or ZIP-wrapped manifest is
+  structurally parsed, with 24 MiB expansion cap, CRC32, expected depot and
+  manifest GID, section order and file mapping count. NO cryptographic
+  signature validation or chunk downloading yet.
+- Host: 47 Python tests, all prior CM/WS fuzz tests, new ZIP/protobuf tests
+  with 20k malformed variants, ASan+UBSan (LSan disabled due runtime), and
+  cm_session_runtime.cpp compiled with host g++ -Werror.
+- ARM64 NRO CI pending for this commit. Hardware CDN connectivity **not yet
+  observed**. Keep v0.9 NRO for rollback. No Steam game binaries or mods
+  included or published.
+- Next: prove on hardware that CDN returns a matching manifest; parse its
+  FileMapping and chunks, decrypt filenames/chunks using volatile AES key,
+  support SteamPipe compression, hashes and transactional install. Security:
+  paths, file counts, sizes and collisions checked before SD writes.

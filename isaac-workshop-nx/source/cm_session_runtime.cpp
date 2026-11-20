@@ -22,6 +22,7 @@ bool probe_manifest_code(CmWebSocket& socket,
                          const CmLogonResult& session,
                          uint64_t manifest_id,
                          uint32_t& manifest_eresult,
+                         CmManifestTicket* ticket,
                          std::string& error) {
     manifest_eresult = 0;
     constexpr uint64_t job_id = 0x49534141434e5832ULL;
@@ -57,9 +58,12 @@ bool probe_manifest_code(CmWebSocket& socket,
                     msg.data(), msg.size(), job_id, reply, error))
                 return false;
             manifest_eresult = reply.eresult;
-            // Do not print, write or retain the Steam CDN request code.
+            if (ticket && reply.eresult == 1)
+                ticket->request_code = reply.request_code;
             volatile uint64_t* secret = &reply.request_code;
             *secret = 0;
+            for (auto& copy : messages) wipe(copy);
+            wipe(bytes);
             error.clear();
             return true;
         }
@@ -72,6 +76,7 @@ bool probe_login(const std::string& wss_url, const std::string& account,
                  const std::string& token, bool authenticated,
                  uint32_t* depot_eresult, uint64_t manifest_id,
                  uint32_t* manifest_eresult,
+                 CmManifestTicket* ticket,
                  std::string& error) {
     if (depot_eresult) *depot_eresult = 0;
     if (manifest_eresult) *manifest_eresult = 0;
@@ -162,6 +167,11 @@ bool probe_login(const std::string& wss_url, const std::string& account,
                     }
                     *depot_eresult = key.eresult;
                     const bool authorized_depot = key.has_key;
+                    if (ticket && authorized_depot) {
+                        ticket->has_depot_key = true;
+                        for (size_t j = 0; j < key.key.size(); ++j)
+                            ticket->depot_key[j] = key.key[j];
+                    }
                     // The incoming CM frame can contain the key in several
                     // intermediate copies. Scrub all of them before return.
                     for (auto& msg : key_messages) wipe(msg);
@@ -171,7 +181,7 @@ bool probe_login(const std::string& wss_url, const std::string& account,
                     error.clear();
                     if (manifest_id && manifest_eresult && authorized_depot)
                         return probe_manifest_code(socket, session, manifest_id,
-                                                   *manifest_eresult, error);
+                                                   *manifest_eresult, ticket, error);
                     return true;
                 }
             }
@@ -185,8 +195,15 @@ bool probe_login(const std::string& wss_url, const std::string& account,
 
 } // namespace
 
+CmManifestTicket::~CmManifestTicket() {
+    volatile uint8_t* key = depot_key.data();
+    for (size_t i = 0; i < depot_key.size(); ++i) key[i] = 0;
+    volatile uint64_t* code = &request_code;
+    *code = 0;
+}
+
 bool cm_probe_anonymous_login(const std::string& wss_url, std::string& error) {
-    return probe_login(wss_url, {}, {}, false, nullptr, 0, nullptr, error);
+    return probe_login(wss_url, {}, {}, false, nullptr, 0, nullptr, nullptr, error);
 }
 
 bool cm_probe_token_login(const std::string& wss_url,
@@ -194,7 +211,7 @@ bool cm_probe_token_login(const std::string& wss_url,
                           const std::string& access_token,
                           std::string& error) {
     return probe_login(wss_url, account_name, access_token, true,
-                       nullptr, 0, nullptr, error);
+                       nullptr, 0, nullptr, nullptr, error);
 }
 
 bool cm_probe_token_depot_access(const std::string& wss_url,
@@ -203,7 +220,7 @@ bool cm_probe_token_depot_access(const std::string& wss_url,
                                  uint32_t& depot_eresult,
                                  std::string& error) {
     return probe_login(wss_url, account_name, access_token, true,
-                       &depot_eresult, 0, nullptr, error);
+                       &depot_eresult, 0, nullptr, nullptr, error);
 }
 
 bool cm_probe_token_manifest_access(const std::string& wss_url,
@@ -218,7 +235,22 @@ bool cm_probe_token_manifest_access(const std::string& wss_url,
         return false;
     }
     return probe_login(wss_url, account_name, access_token, true,
-                       &depot_eresult, manifest_id, &manifest_eresult, error);
+                       &depot_eresult, manifest_id, &manifest_eresult, nullptr, error);
+}
+
+bool cm_authorize_token_manifest(const std::string& wss_url,
+                                 const std::string& account_name,
+                                 const std::string& access_token,
+                                 uint64_t manifest_id,
+                                 CmManifestTicket& ticket,
+                                 std::string& error) {
+    if (!manifest_id) {
+        error = "Steam CM: manifest ID invalido";
+        return false;
+    }
+    return probe_login(wss_url, account_name, access_token, true,
+                       &ticket.depot_eresult, manifest_id,
+                       &ticket.manifest_eresult, &ticket, error);
 }
 } // namespace isaacnx
 

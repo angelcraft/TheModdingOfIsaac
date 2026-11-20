@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <cstdint>
 #include <string>
 
@@ -33,5 +34,26 @@ bool cm_probe_token_manifest_access(const std::string& wss_url,
                                     uint32_t& depot_eresult,
                                     uint32_t& manifest_eresult,
                                     std::string& error);
+
+// One-shot authorization ticket, valid only for an immediate CDN request.
+// Secrets are never persisted and are cleared on scope exit. Not copyable.
+struct CmManifestTicket {
+    uint32_t depot_eresult = 0;
+    uint32_t manifest_eresult = 0;
+    uint64_t request_code = 0;
+    bool has_depot_key = false;
+    std::array<uint8_t, 32> depot_key {};
+    CmManifestTicket() = default;
+    ~CmManifestTicket();
+    CmManifestTicket(const CmManifestTicket&) = delete;
+    CmManifestTicket& operator=(const CmManifestTicket&) = delete;
+};
+
+bool cm_authorize_token_manifest(const std::string& wss_url,
+                                 const std::string& account_name,
+                                 const std::string& access_token,
+                                 uint64_t manifest_id,
+                                 CmManifestTicket& ticket,
+                                 std::string& error);
 }
 

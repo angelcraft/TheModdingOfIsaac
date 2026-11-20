@@ -229,6 +229,54 @@ bool parse_cm_directory(const std::string& json, std::vector<std::string>& urls,
     return true;
 }
 
+bool parse_steam_content_directory(const std::string& json,
+                                   std::vector<std::string>& origins,
+                                   std::string& error) {
+    origins.clear();
+    Json root;
+    if (!parse_metadata_document(json, root, error)) return false;
+    const Json& servers = root.at("response").at("servers");
+    if (servers.type != Json::Array) {
+        error = "Steam CDN: directorio sin servidores";
+        return false;
+    }
+    std::set<std::string> seen;
+    for (const auto& server : servers.entries) {
+        if (server.type != Json::Object ||
+            server.at("host").type != Json::String ||
+            server.at("https_support").type != Json::String ||
+            server.at("https_support").text != "mandatory") continue;
+        const std::string& host = server.at("host").text;
+        if (host.size() > 180 || host.empty() || host.front() == '-' ||
+            host.back() == '-' || host.front() == '.' || host.back() == '.' ||
+            host.find("..") != std::string::npos ||
+            !std::all_of(host.begin(), host.end(), [](char c) {
+                return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+                       c == '.' || c == '-';
+            })) continue;
+        constexpr const char* kDomains[] = {
+            ".steamcontent.com", ".steamserver.net", ".steampowered.com"
+        };
+        bool trusted = false;
+        for (const char* suffix : kDomains) {
+            const std::string domain(suffix);
+            if (host.size() > domain.size() &&
+                host.compare(host.size() - domain.size(), domain.size(), domain) == 0)
+                trusted = true;
+        }
+        if (!trusted) continue;
+        const std::string origin = "https://" + host;
+        if (seen.insert(origin).second) origins.push_back(origin);
+        if (origins.size() == 8) break;
+    }
+    if (origins.empty()) {
+        error = "Steam CDN: sin servidores HTTPS de Valve validos";
+        return false;
+    }
+    error.clear();
+    return true;
+}
+
 bool parse_workshop_id(const std::string& input, std::string& id) {
     id.clear();
     std::string s = trim(input);
@@ -495,3 +543,4 @@ std::string select_installed_mod_root(const std::string& sd_root) {
 }
 
 } // namespace isaacnx
+

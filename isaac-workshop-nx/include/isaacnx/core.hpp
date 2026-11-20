@@ -30,6 +30,12 @@ WorkshopDelivery workshop_delivery(const WorkshopItem& item);
 bool parse_cm_directory(const std::string& json, std::vector<std::string>& urls,
                         std::string& error);
 
+// Parse Valve's SteamPipe CDN directory into HTTPS origins. Only trusted
+// Valve-owned hostname suffixes are accepted; no arbitrary redirect targets.
+bool parse_steam_content_directory(const std::string& json,
+                                   std::vector<std::string>& origins,
+                                   std::string& error);
+
 // Steam's QR login is a separate, experimental step from content downloading.
 // request_id is an opaque secret: never print or include it in the QR.
 struct SteamQrChallenge {
@@ -130,3 +136,4 @@ bool install_zip(const std::string& archive_path, const std::string& mod_root,
                  const std::string& install_name, std::string& error);
 
 } // namespace isaacnx
+

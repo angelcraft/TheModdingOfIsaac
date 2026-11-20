@@ -1,6 +1,7 @@
 #include "isaacnx/core.hpp"
 #include "isaacnx/cm_transport.hpp"
 #include "isaacnx/cm_session_runtime.hpp"
+#include "isaacnx/steam_manifest.hpp"
 #include "qrcodegen.h"
 
 #include <switch.h>
@@ -26,6 +27,7 @@ constexpr size_t kMaxDownload = 32 * 1024 * 1024;
 constexpr size_t kMaxMetadata = 1024 * 1024;
 constexpr size_t kMaxBrowse = 3 * 1024 * 1024;
 constexpr size_t kMaxAuthResponse = 16 * 1024;
+constexpr size_t kMaxManifestWire = 8 * 1024 * 1024;
 std::string message = "Listo. Cierra Isaac antes de instalar.";
 
 struct MemoryBuffer { std::string data; size_t limit = kMaxMetadata; bool excessive = false; };
@@ -156,6 +158,47 @@ void steam_qr_display(const isaacnx::SteamQrChallenge& challenge) {
 }
 
 bool fetch_steam_cm_servers(std::vector<std::string>& endpoints, std::string& error);
+bool fetch_steam_content_servers(std::vector<std::string>& origins, std::string& error);
+
+bool inspect_remote_steam_manifest(const std::vector<std::string>& origins,
+                                   uint64_t manifest_id, uint64_t request_code,
+                                   isaacnx::SteamManifestSummary& summary,
+                                   std::string& error) {
+    if (!manifest_id || !request_code || origins.empty()) {
+        error = "Steam CDN: faltan datos del manifiesto";
+        return false;
+    }
+    const std::string suffix = "/depot/250900/manifest/" +
+        std::to_string(manifest_id) + "/5/" + std::to_string(request_code);
+    for (size_t i = 0; i < origins.size() && i < 4; ++i) {
+        CURL* h = curl_easy_init();
+        if (!h) { error = "Steam CDN: no pude iniciar HTTPS"; return false; }
+        MemoryBuffer body;
+        body.limit = kMaxManifestWire;
+        const std::string url = origins[i] + suffix;
+        curl_easy_setopt(h, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(h, CURLOPT_WRITEFUNCTION, memory_write);
+        curl_easy_setopt(h, CURLOPT_WRITEDATA, &body);
+        common_curl(h);
+        curl_easy_setopt(h, CURLOPT_FOLLOWLOCATION, 0L);
+        curl_easy_setopt(h, CURLOPT_TIMEOUT, 60L);
+        const CURLcode result = curl_easy_perform(h);
+        long http = 0;
+        curl_easy_getinfo(h, CURLINFO_RESPONSE_CODE, &http);
+        curl_easy_cleanup(h);
+        if (result != CURLE_OK || http != 200 || body.excessive) {
+            error = "Steam CDN: servidor " + std::to_string(i + 1) +
+                    " HTTP " + std::to_string(http) + " curl " +
+                    std::to_string(static_cast<int>(result));
+            continue;
+        }
+        if (isaacnx::inspect_steam_manifest(
+                reinterpret_cast<const uint8_t*>(body.data.data()),
+                body.data.size(), 250900, manifest_id, summary, error)) return true;
+        // Never accept a different manifest just because HTTP returned 200.
+    }
+    return false;
+}
 
 void wipe_session_token(std::string& token) {
     volatile char* bytes = token.data();
@@ -209,27 +252,42 @@ void steam_qr_experiment(PadState* pad, uint64_t manifest_id = 0) {
         printf("Token solo en RAM; se borra al terminar.\n");
         consoleUpdate(nullptr);
         std::vector<std::string> urls;
-        bool ok = fetch_steam_cm_servers(urls, error);
+        std::vector<std::string> cdns;
+        bool ok = (!manifest_id || fetch_steam_content_servers(cdns, error)) &&
+                  fetch_steam_cm_servers(urls, error);
         if (ok) {
             bool connected = false;
             uint32_t depot_result = 0;
             uint32_t manifest_result = 0;
+            bool manifest_downloaded = false;
+            isaacnx::SteamManifestSummary summary;
             for (size_t i = 0; i < urls.size() && i < 2; ++i) {
+                isaacnx::CmManifestTicket ticket;
                 const bool tested = manifest_id
-                    ? isaacnx::cm_probe_token_manifest_access(
+                    ? isaacnx::cm_authorize_token_manifest(
                           urls[i], approved_account, approved_access_token,
-                          manifest_id, depot_result, manifest_result, error)
+                          manifest_id, ticket, error)
                     : isaacnx::cm_probe_token_depot_access(
                           urls[i], approved_account, approved_access_token,
                           depot_result, error);
                 if (tested) {
+                    if (manifest_id) {
+                        depot_result = ticket.depot_eresult;
+                        manifest_result = ticket.manifest_eresult;
+                        if (depot_result == 1 && manifest_result == 1)
+                            manifest_downloaded = inspect_remote_steam_manifest(
+                                cdns, manifest_id, ticket.request_code, summary, error);
+                    }
                     connected = true;
                     break;
                 }
             }
-            if (connected && manifest_id && depot_result == 1 &&
-                manifest_result == 1)
-                message = "Steam: manifest autorizado! Falta bajar archivos del CDN.";
+            if (connected && manifest_downloaded)
+                message = "Steam CDN OK: " + std::to_string(summary.file_count) +
+                          " archivos en manifest. Faltan chunks e instalacion.";
+            else if (connected && manifest_id && depot_result == 1 &&
+                     manifest_result == 1)
+                message = "Steam CM OK, pero CDN: " + error;
             else if (connected && manifest_id && depot_result == 1)
                 message = "Steam: depot OK, manifest EResult " +
                           std::to_string(manifest_result);
@@ -473,6 +531,31 @@ bool fetch_steam_cm_servers(std::vector<std::string>& endpoints, std::string& er
         return false;
     }
     return isaacnx::parse_cm_directory(response.data, endpoints, error);
+}
+
+bool fetch_steam_content_servers(std::vector<std::string>& origins,
+                                 std::string& error) {
+    CURL* h = curl_easy_init();
+    if (!h) { error = "Steam CDN: no pude iniciar HTTPS"; return false; }
+    MemoryBuffer response;
+    response.limit = 256 * 1024;
+    curl_easy_setopt(h, CURLOPT_URL,
+        "https://api.steampowered.com/IContentServerDirectoryService/GetServersForSteamPipe/v1/?cell_id=0&max_servers=16");
+    curl_easy_setopt(h, CURLOPT_WRITEFUNCTION, memory_write);
+    curl_easy_setopt(h, CURLOPT_WRITEDATA, &response);
+    common_curl(h);
+    curl_easy_setopt(h, CURLOPT_FOLLOWLOCATION, 0L);
+    curl_easy_setopt(h, CURLOPT_TIMEOUT, 15L);
+    const CURLcode status = curl_easy_perform(h);
+    long http = 0;
+    curl_easy_getinfo(h, CURLINFO_RESPONSE_CODE, &http);
+    curl_easy_cleanup(h);
+    if (status != CURLE_OK || http != 200 || response.excessive) {
+        error = "Steam CDN: directorio HTTP " + std::to_string(http) +
+                " curl " + std::to_string(static_cast<int>(status));
+        return false;
+    }
+    return isaacnx::parse_steam_content_directory(response.data, origins, error);
 }
 
 void steam_cm_experiment() {

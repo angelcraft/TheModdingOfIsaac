@@ -114,6 +114,27 @@ class IsaacWorkshopTests(unittest.TestCase):
         ):
             self.assertNotEqual(self.cm_list({"response": response}).returncode, 0)
 
+    def test_cdn_directory_only_accepts_trusted_https(self):
+        entries = [
+            {"host": "cache1-ams1.steamcontent.com", "https_support": "mandatory"},
+            {"host": "cache1-ams1.steamcontent.com", "https_support": "mandatory"},
+            {"host": "cache2.steamserver.net", "https_support": "mandatory"},
+            {"host": "cache3.steamcontent.com", "https_support": "optional"},
+            {"host": "cache.steamcontent.com.evil.test", "https_support": "mandatory"},
+            {"host": "127.0.0.1", "https_support": "mandatory"},
+            {"host": "bad/host.steamcontent.com", "https_support": "mandatory"},
+        ]
+        path = self.base / "cdn.json"
+        path.write_text(json.dumps({"response": {"servers": entries}}), encoding="utf-8")
+        p = run("cdn-list", path)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stdout.splitlines(), [
+            "https://cache1-ams1.steamcontent.com",
+            "https://cache2.steamserver.net",
+        ])
+        path.write_text(json.dumps({"response": {"servers": entries[4:]}}), encoding="utf-8")
+        self.assertNotEqual(run("cdn-list", path).returncode, 0)
+
     def steam_auth(self, kind, response):
         path = self.base / "auth.json"
         path.write_text(json.dumps(response), encoding="utf-8")
@@ -311,3 +332,4 @@ class IsaacWorkshopTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
