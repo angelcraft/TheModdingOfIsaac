@@ -9,15 +9,28 @@
 #include <vector>
 
 namespace isaacnx {
+namespace {
+void wipe(std::vector<uint8_t>& bytes) {
+    volatile uint8_t* data = bytes.data();
+    for (size_t i = 0; i < bytes.size(); ++i) data[i] = 0;
+    bytes.clear();
+}
 
-bool cm_probe_anonymous_login(const std::string& wss_url, std::string& error) {
+bool probe_login(const std::string& wss_url, const std::string& account,
+                 const std::string& token, bool authenticated,
+                 std::string& error) {
     CmWebSocket socket;
     if (!socket.connect(wss_url, error)) return false;
     std::vector<uint8_t> request;
     if (!cm_build_hello(request, error) ||
         !socket.send_binary(request, error)) return false;
-    if (!cm_build_anonymous_logon(request, error) ||
-        !socket.send_binary(request, error)) return false;
+    const bool built = authenticated
+        ? cm_build_token_logon(account, token, request, error)
+        : cm_build_anonymous_logon(request, error);
+    if (!built) { wipe(request); return false; }
+    const bool sent = socket.send_binary(request, error);
+    wipe(request);
+    if (!sent) return false;
 
     const auto deadline = std::chrono::steady_clock::now() +
                           std::chrono::seconds(25);
@@ -41,7 +54,7 @@ bool cm_probe_anonymous_login(const std::string& wss_url, std::string& error) {
             if (!cm_parse_logon_response(msg.data(), msg.size(), session, error))
                 return false;
             if (session.result != 1) {
-                error = "Steam CM: logon anonimo denegado, EResult " +
+                error = "Steam CM: logon denegado, EResult " +
                         std::to_string(session.result);
                 return false;
             }
@@ -49,7 +62,20 @@ bool cm_probe_anonymous_login(const std::string& wss_url, std::string& error) {
             return true;
         }
     }
-    error = "Steam CM: no llego respuesta de login anonimo";
+    error = "Steam CM: no llego respuesta de login";
     return false;
+}
+
+} // namespace
+
+bool cm_probe_anonymous_login(const std::string& wss_url, std::string& error) {
+    return probe_login(wss_url, {}, {}, false, error);
+}
+
+bool cm_probe_token_login(const std::string& wss_url,
+                          const std::string& account_name,
+                          const std::string& access_token,
+                          std::string& error) {
+    return probe_login(wss_url, account_name, access_token, true, error);
 }
 } // namespace isaacnx

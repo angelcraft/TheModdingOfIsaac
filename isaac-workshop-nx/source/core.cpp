@@ -318,6 +318,15 @@ bool parse_steam_qr_poll(const std::string& json, SteamQrPoll& poll,
     }
     candidate.confirmed = access.type == Json::String && !access.text.empty() &&
                           refresh.type == Json::String && !refresh.text.empty();
+    if (candidate.confirmed) {
+        const bool safe = access.text.size() <= 4096 &&
+            std::all_of(access.text.begin(), access.text.end(), [](char ch) {
+                return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+                       (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '.';
+            });
+        if (!safe) { error = "Steam Guard: token QR invalido"; return false; }
+        candidate.access_token = access.text;
+    }
     candidate.interaction = response.at("had_remote_interaction").text == "true";
     if (response.at("account_name").type == Json::String)
         candidate.account_name = safe_console_text(response.at("account_name").text, 45);

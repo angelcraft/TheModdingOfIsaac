@@ -2,6 +2,7 @@
 #include "isaacnx/cm_wire.hpp"
 
 #include <cstdint>
+#include <algorithm>
 #include <vector>
 
 namespace isaacnx {
@@ -99,6 +100,51 @@ bool cm_build_anonymous_logon(std::vector<uint8_t>& out, std::string& error) {
     write_text(body, 6, "english");
     write_uint(body, 7, 0); // EOSType.Unknown; no spoofed PC identity
     return encode_cm_proto_frame(kCmClientLogon, header, body, out, error);
+}
+
+bool cm_build_token_logon(const std::string& account_name,
+                          const std::string& access_token,
+                          std::vector<uint8_t>& out, std::string& error) {
+    out.clear();
+    const auto account_char = [](char ch) {
+        return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+               (ch >= '0' && ch <= '9') || ch == '_' || ch == '-';
+    };
+    const auto token_char = [](char ch) {
+        return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+               (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' || ch == '.';
+    };
+    if (account_name.empty() || account_name.size() > 64 ||
+        !std::all_of(account_name.begin(), account_name.end(), account_char) ||
+        access_token.size() < 50 || access_token.size() > 4096 ||
+        !std::all_of(access_token.begin(), access_token.end(), token_char)) {
+        error = "Steam CM: cuenta o token QR invalidos";
+        return false;
+    }
+    std::vector<uint8_t> header;
+    // Public individual SteamID with zero account ID and desktop instance 1.
+    // SteamKit uses this initial header and resolves the account from token.
+    constexpr uint64_t initial_steamid =
+        (uint64_t(1) << 56) | (uint64_t(1) << 52) | (uint64_t(1) << 32);
+    write_fixed64(header, 1, initial_steamid);
+    write_uint(header, 2, 0);
+    std::vector<uint8_t> body;
+    write_uint(body, 1, kSteamProtocolVersion);
+    write_uint(body, 3, 0);
+    write_text(body, 6, "english");
+    write_uint(body, 7, 0);
+    write_uint(body, 8, 0); // never ask Steam to save session credentials
+    // Account name tag 50; Steam access token tag 108.
+    write_varint(body, 50 * 8 + 2);
+    write_varint(body, account_name.size());
+    body.insert(body.end(), account_name.begin(), account_name.end());
+    write_varint(body, 108 * 8 + 2);
+    write_varint(body, access_token.size());
+    body.insert(body.end(), access_token.begin(), access_token.end());
+    const bool ok = encode_cm_proto_frame(kCmClientLogon, header, body, out, error);
+    volatile uint8_t* clear = body.data();
+    for (size_t i = 0; i < body.size(); ++i) clear[i] = 0;
+    return ok;
 }
 
 bool cm_build_heartbeat(const CmLogonResult& session,

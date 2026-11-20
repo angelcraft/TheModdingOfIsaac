@@ -1,5 +1,6 @@
 #include "isaacnx/cm_session_proto.hpp"
 #include "isaacnx/cm_wire.hpp"
+#include <algorithm>
 
 #include <cassert>
 #include <cstdint>
@@ -28,6 +29,20 @@ int main() {
     assert(frame.header.size() == 11 && frame.header[0] == 0x09);
     assert(frame.header[8] == 0x01 && frame.header[9] == 0x10);
     assert(frame.body[0] == 0x08);
+
+    const std::string fake_token(75, 'z');
+    std::vector<uint8_t> token_logon;
+    assert(cm_build_token_logon("my_account_1", fake_token, token_logon, error));
+    assert(decode_cm_proto_frame(token_logon.data(), token_logon.size(), frame, error));
+    assert(frame.emsg == 5514);
+    const std::vector<uint8_t> account{'m','y','_','a','c','c','o','u','n','t','_','1'};
+    assert(std::search(frame.body.begin(), frame.body.end(),
+                       account.begin(), account.end()) != frame.body.end());
+    assert(!cm_build_token_logon("bad\r\nHTTP:", fake_token, token_logon, error));
+    assert(token_logon.empty());
+    assert(!cm_build_token_logon("account", "short", token_logon, error));
+    assert(!cm_build_token_logon("account", std::string(70, '.') + "\n",
+                                 token_logon, error));
 
     // Body EResult=OK, heartbeat=30 seconds; protobuf header has steamid
     // and sessionid. Invalid/wrong-type frames must fail closed.

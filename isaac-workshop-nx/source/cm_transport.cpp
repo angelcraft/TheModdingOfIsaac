@@ -192,9 +192,14 @@ bool CmWebSocket::send_frame(uint8_t opcode,
     randomGet(mask, sizeof mask);
     std::vector<uint8_t> data;
     if (!ws_encode_client_frame(opcode, payload, mask, data, error)) return false;
-    const std::string raw(reinterpret_cast<const char*>(data.data()), data.size());
-    if (!send_all(static_cast<CURL*>(handle_), raw,
-                  Clock::now() + std::chrono::seconds(12))) {
+    std::string raw(reinterpret_cast<const char*>(data.data()), data.size());
+    const bool sent = send_all(static_cast<CURL*>(handle_), raw,
+                  Clock::now() + std::chrono::seconds(12));
+    volatile char* raw_bytes = raw.data();
+    for (size_t i = 0; i < raw.size(); ++i) raw_bytes[i] = 0;
+    volatile uint8_t* frame_bytes = data.data();
+    for (size_t i = 0; i < data.size(); ++i) frame_bytes[i] = 0;
+    if (!sent) {
         error = "Steam CM: fallo enviando trama por TLS";
         return false;
     }

@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <string>
 #include <vector>
+#include <utility>
 
 namespace isaacnx {
 
@@ -44,9 +45,33 @@ struct SteamQrPoll {
     std::string account_name;
     std::string new_client_id;
     std::string new_challenge_url;
+    std::string access_token; // transient Steam Guard QR client token
+    SteamQrPoll() = default;
+    SteamQrPoll(const SteamQrPoll&) = delete;
+    SteamQrPoll& operator=(const SteamQrPoll&) = delete;
+    SteamQrPoll(SteamQrPoll&&) noexcept = default;
+    SteamQrPoll& operator=(SteamQrPoll&& other) noexcept {
+        if (this != &other) {
+            clear_secret();
+            confirmed = other.confirmed;
+            interaction = other.interaction;
+            account_name = std::move(other.account_name);
+            new_client_id = std::move(other.new_client_id);
+            new_challenge_url = std::move(other.new_challenge_url);
+            access_token = std::move(other.access_token);
+        }
+        return *this;
+    }
+    void clear_secret() noexcept {
+        volatile char* bytes = access_token.data();
+        for (size_t i = 0; i < access_token.size(); ++i) bytes[i] = 0;
+        access_token.clear();
+    }
+    ~SteamQrPoll() { clear_secret(); }
 };
 
-// Validate tightly bounded JSON envelopes; never return or log auth tokens.
+// Validate bounded auth JSON. QR poll keeps the access token only in memory;
+// never log it or persist it. The SteamQrPoll destructor wipes it.
 bool parse_steam_qr_begin(const std::string& json, SteamQrChallenge& challenge,
                           std::string& error);
 bool parse_steam_qr_poll(const std::string& json, SteamQrPoll& poll,

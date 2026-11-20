@@ -58,7 +58,7 @@ $(APP).elf: $(SWITCH_OBJS)
 	$(SWITCH_CXX) $(SWITCH_LDFLAGS) $^ -Wl,--start-group -lcurl -lz -lnx -Wl,--end-group -o $@
 
 $(APP).nacp:
-	$(DEVKITPRO)/tools/bin/nacptool --create "Isaac Workshop NX" "angelcraft / Phylos" "0.6.0" $@
+	$(DEVKITPRO)/tools/bin/nacptool --create "Isaac Workshop NX" "angelcraft / Phylos" "0.7.0" $@
 
 $(APP).nro: $(APP).elf $(APP).nacp
 	$(DEVKITPRO)/tools/bin/elf2nro $(APP).elf $@ --nacp=$(APP).nacp

@@ -38,3 +38,12 @@ New branch-only, reversible 0.6 work:
 - 40,000 malformed-frame fuzz cases, deterministic tests and local ASan/UBSan passed; GitHub Actions ARM64 still needs to be verified for this commit.
 
 No authenticated Steam CM session, depot key, manifest request code, CDN chunks, installation or direct Workshop download yet. Anonymous access may be insufficient for AppID 250900; Android anonymous DepotDownloader returned `App 250900 ... not available`. Do not claim mod downloading works or ask for Steam password. Next: actual user QR token handling in volatile memory, authorized CM logon, depot manifest + CDN client with AES/zlib and verified filesystem staging. Keep previous 0.5 NRO rollback artifact available.
+
+## 2026-11-20 - 0.7 Steam Guard QR account logon (source candidate, CI pending)
+
+- QR poll now retains only the verified client access_token in transient memory, validates its character set and erases it on destruction. Refresh token is not retained.
+- Steam CM token login protobuf uses account_name field 50 and access_token field 108 with a public individual SteamID; no Steam password or persistent credentials.
+- [Minus] QR path automatically attempts an authenticated CM login after Guard approval. [Y] continues independent anonymous login diagnostic. Both close the TLS socket after the probe.
+- Outgoing masked WebSocket frames and intermediate protobuf vectors are wiped when sent; host-only malformed-input tests expanded.
+- Still no Workshop manifest request, depot key, CDN download, nor installation. Avoid claiming downloads are usable.
+- Actions 0.6 workflow failed to auto-trigger on 2026-11-20 despite successful GitHub ref update; request manual workflow_dispatch if this persists. No NRO handoff until ARM64 link succeeds.

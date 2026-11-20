@@ -16,6 +16,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
+#include <utility>
 
 namespace {
 constexpr const char* kAppRoot = "sdmc:/switch/isaac_workshop_nx";
@@ -150,8 +151,16 @@ void steam_qr_display(const isaacnx::SteamQrChallenge& challenge) {
         printf("QR demasiado largo para la pantalla.\n");
         printf("Enlace oficial: %.130s\n", challenge.challenge_url.c_str());
     }
-    printf("[B] Cancelar | Solo comprobar acceso; aun no descarga\n");
+    printf("[B] Cancelar | QR autentica CM; CDN aun pendiente\n");
     consoleUpdate(nullptr);
+}
+
+bool fetch_steam_cm_servers(std::vector<std::string>& endpoints, std::string& error);
+
+void wipe_session_token(std::string& token) {
+    volatile char* bytes = token.data();
+    for (size_t i = 0; i < token.size(); ++i) bytes[i] = 0;
+    token.clear();
 }
 
 void steam_qr_experiment(PadState* pad) {
@@ -163,6 +172,8 @@ void steam_qr_experiment(PadState* pad) {
     bool interaction = false;
     bool completed = false;
     bool cancelled = false;
+    std::string approved_access_token;
+    std::string approved_account;
     const auto expiry = std::chrono::steady_clock::now() + std::chrono::minutes(5);
     auto next_poll = std::chrono::steady_clock::now() +
                      std::chrono::seconds(challenge.interval_seconds);
@@ -175,7 +186,12 @@ void steam_qr_experiment(PadState* pad) {
             isaacnx::SteamQrPoll result;
             if (!steam_qr_poll(challenge, result, error)) break;
             interaction = interaction || result.interaction;
-            if (result.confirmed) { completed = true; break; }
+            if (result.confirmed) {
+                approved_access_token = std::move(result.access_token);
+                approved_account = result.account_name;
+                completed = true;
+                break;
+            }
             if (!result.new_client_id.empty()) challenge.client_id = result.new_client_id;
             if (!result.new_challenge_url.empty() && result.new_challenge_url != challenge.challenge_url) {
                 challenge.challenge_url = result.new_challenge_url;
@@ -187,15 +203,33 @@ void steam_qr_experiment(PadState* pad) {
         svcSleepThread(100'000'000);
     }
     std::fill(challenge.request_id.begin(), challenge.request_id.end(), '\0');
-    if (completed)
-        message = "Steam Guard confirmado. Cliente de descarga nativo aun pendiente.";
-    else if (cancelled)
+    if (completed) {
+        consoleClear();
+        printf("Steam Guard confirmado. Autenticando en Steam CM...\n");
+        printf("Token solo en RAM; se borra al terminar.\n");
+        consoleUpdate(nullptr);
+        std::vector<std::string> urls;
+        bool ok = fetch_steam_cm_servers(urls, error);
+        if (ok) {
+            bool connected = false;
+            for (size_t i = 0; i < urls.size() && i < 2; ++i) {
+                if (isaacnx::cm_probe_token_login(urls[i], approved_account,
+                                                  approved_access_token, error)) {
+                    connected = true;
+                    break;
+                }
+            }
+            if (connected) message = "Steam CM: cuenta autenticada! Falta bajar manifest/CDN.";
+            else message = "Steam Guard OK; login CM: " + error;
+        } else message = "Steam Guard OK; directorio CM: " + error;
+    } else if (cancelled)
         message = "Steam Guard cancelado. No se guardo ninguna sesion.";
     else if (!error.empty())
         message = error;
     else
         message = interaction ? "Steam Guard: hubo interaccion pero no confirmacion." :
                                 "Steam Guard: QR agotado tras 5 minutos.";
+    wipe_session_token(approved_access_token);
 }
 
 bool lookup_many(const std::vector<std::string>& ids,
@@ -425,7 +459,7 @@ bool fetch_steam_cm_servers(std::vector<std::string>& endpoints, std::string& er
 
 void steam_cm_experiment() {
     consoleClear();
-    printf("ISAAC WORKSHOP NX 0.6 | Steam CM / LOGIN\n");
+    printf("ISAAC WORKSHOP NX 0.7 | Steam CM / LOGIN\n");
     printf("Solicitando servidores oficiales de Valve...\n");
     consoleUpdate(nullptr);
     std::vector<std::string> urls;
@@ -448,14 +482,14 @@ void steam_cm_experiment() {
 
 void display(const std::string& target, const std::vector<std::string>& list, size_t selected) {
     consoleClear();
-    printf("ISAAC WORKSHOP NX 0.6 EXP | Switch / Repentance\n");
+    printf("ISAAC WORKSHOP NX 0.7 EXP | Switch / Repentance\n");
     printf("=========================================\n");
     printf("Steam: buscar o consultar ID; ZIP: local\n\n");
     printf("Ruta activa:\n%.78s\n\n", target.empty() ? "NO ENCONTRADA" : target.c_str());
     printf("[X] Workshop ID o enlace Steam\n");
     printf("[R] Buscar mods por nombre\n");
     printf("[L] En ficha: descarga via Android\n");
-    printf("[-] Prueba Steam Guard nativa (QR)\n");
+    printf("[-] Iniciar sesion Steam (QR)\n");
     printf("[A] Instalar ZIP seleccionado\n");
     printf("[Y] Probar login Steam CM  [+] Salir\n");
     printf("[Arriba/Abajo] Seleccionar ZIP\n\n");
@@ -474,7 +508,7 @@ void display(const std::string& target, const std::vector<std::string>& list, si
 void display_search(const std::string& query,
                     const std::vector<isaacnx::WorkshopItem>& results, size_t selected) {
     consoleClear();
-    printf("ISAAC WORKSHOP NX 0.6 EXP | Busqueda Steam\n");
+    printf("ISAAC WORKSHOP NX 0.7 EXP | Busqueda Steam\n");
     printf("=========================================\n");
     printf("Buscando: %.62s\n", isaacnx::safe_console_text(query, 62).c_str());
     printf("[Arriba/Abajo] Elegir  [A] Detalles\n");
