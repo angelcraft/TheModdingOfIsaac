@@ -1,4 +1,4 @@
-# Isaac Workshop NX — 0.4 (Steam Guard nativo: prueba experimental)
+# Isaac Workshop NX — 0.8 (Steam CM / depósito Workshop experimental)
 
 Gestor independiente de mods de **The Binding of Isaac: Repentance** para
 Nintendo Switch con Atmosphère. Código fuente incluido, sin mods de terceros,
@@ -213,3 +213,25 @@ API de busqueda con clave: https://partner.steamgames.com/doc/webapi/IPublishedF
 Runtime: https://github.com/granule256/isaac-mod-runtime
 
 Descargador SteamRE: https://github.com/SteamRE/DepotDownloader
+
+
+## Versión experimental 0.8 (2026-11-20)
+
+La Switch ya ha confirmado conexión WebSocket nativa con Steam CM (prueba
+de hardware de Phylos con v0.5). La nueva versión mantiene transporte y
+autenticación Steam Guard mediante QR, sin guardar credenciales. Tras aprobar
+la sesión, pide **solo** la clave temporal del depósito Workshop 250900 para
+comprobar el acceso de la cuenta; no guarda ni muestra esa clave y cierra
+la sesión inmediatamente.
+
+**Todavía NO descarga mods de SteamPipe**: faltan petición de código de
+manifest, servidores CDN, descifrado/validación de ficheros y staging de
+instalación. No copies versiones 0.8 sin NRO compilado y probado.
+Las versiones 0.6 y 0.7 no han superado GitHub Actions; se reprodujeron
+sus pruebas de host con éxito localmente, pero el fallo de Actions sigue
+sin diagnosticar por logs no disponibles. El NRO probado en hardware sigue
+siendo el 0.5 de respaldo.
+
+Salida de la prueba con `[-]`: «depot Workshop autorizado» significa
+que Steam respondió EResult=1 a la petición de clave; un EResult distinto
+indica que no se obtuvo autorización. Ninguno indica que se descargó un mod.

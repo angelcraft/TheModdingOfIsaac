@@ -47,3 +47,29 @@ No authenticated Steam CM session, depot key, manifest request code, CDN chunks,
 - Outgoing masked WebSocket frames and intermediate protobuf vectors are wiped when sent; host-only malformed-input tests expanded.
 - Still no Workshop manifest request, depot key, CDN download, nor installation. Avoid claiming downloads are usable.
 - Actions 0.6 workflow failed to auto-trigger on 2026-11-20 despite successful GitHub ref update; request manual workflow_dispatch if this persists. No NRO handoff until ARM64 link succeeds.
+
+
+## 2026-11-20 - 0.8 Isaac Workshop depot key access (source, no downloader)
+
+- SteamDB confirms app 250900 has workshopdepot=250900; SteamTracking
+  `CMsgClientGetDepotDecryptionKey` request EMsg 5438, response EMsg 5439.
+- New independent `cm_depot` module builds request with session SteamID,
+  client session ID and fixed64 source job ID. Strict response parser checks
+  corresponding target job, depot, EResult and AES key length=32. All
+  intermediate key copies and the owned key are explicitly cleared from RAM.
+- After QR approval, one CM WebSocket connection now handles
+  Hello -> token logon -> depot key request and reports Steam EResult.
+  This is not an installer, does not persist tokens/keys and does not change SD.
+- Tests pass locally: 46 Python tests, previous protobuf/WS fuzz tests,
+  20k extra depot malformed-response fuzz cases and ASan+UBSan.
+  The modified runtime compiles with host g++ -Werror. ARM64 devkitPro build
+  is unverified because a native cross-toolchain is unavailable here.
+- GitHub Actions v0.6 and v0.7 each failed at 'host-tests' after about 4 sec,
+  while both pass locally with the exact remote source. Job logs provider
+  returns BlobNotFound; investigate actual workflow failure before shipping.
+- Next: code for `ContentServerDirectory.GetManifestRequestCode#1` using
+  Workshop item hcontent_file; request code+CDN servers; download manifest,
+  validate and decrypt filenames with the depot key, then fetch, decrypt,
+  decompress and checksum chunks. Only after integrity checks install via
+  existing bounded staging, preserving previous mods. Do not silently
+  fallback to unauthorized external mod mirrors.

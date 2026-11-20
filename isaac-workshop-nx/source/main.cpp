@@ -151,7 +151,7 @@ void steam_qr_display(const isaacnx::SteamQrChallenge& challenge) {
         printf("QR demasiado largo para la pantalla.\n");
         printf("Enlace oficial: %.130s\n", challenge.challenge_url.c_str());
     }
-    printf("[B] Cancelar | QR autentica CM; CDN aun pendiente\n");
+    printf("[B] Cancelar | QR: validar acceso al depot Steam\n");
     consoleUpdate(nullptr);
 }
 
@@ -205,21 +205,27 @@ void steam_qr_experiment(PadState* pad) {
     std::fill(challenge.request_id.begin(), challenge.request_id.end(), '\0');
     if (completed) {
         consoleClear();
-        printf("Steam Guard confirmado. Autenticando en Steam CM...\n");
+        printf("Steam Guard confirmado. Probando Steam CM + depot...\n");
         printf("Token solo en RAM; se borra al terminar.\n");
         consoleUpdate(nullptr);
         std::vector<std::string> urls;
         bool ok = fetch_steam_cm_servers(urls, error);
         if (ok) {
             bool connected = false;
+            uint32_t depot_result = 0;
             for (size_t i = 0; i < urls.size() && i < 2; ++i) {
-                if (isaacnx::cm_probe_token_login(urls[i], approved_account,
-                                                  approved_access_token, error)) {
+                if (isaacnx::cm_probe_token_depot_access(urls[i], approved_account,
+                                                        approved_access_token,
+                                                        depot_result, error)) {
                     connected = true;
                     break;
                 }
             }
-            if (connected) message = "Steam CM: cuenta autenticada! Falta bajar manifest/CDN.";
+            if (connected && depot_result == 1)
+                message = "Steam CM: depot Workshop autorizado! Falta manifest/CDN.";
+            else if (connected)
+                message = "Steam CM: login OK; depot denegado, EResult " +
+                          std::to_string(depot_result);
             else message = "Steam Guard OK; login CM: " + error;
         } else message = "Steam Guard OK; directorio CM: " + error;
     } else if (cancelled)
@@ -459,7 +465,7 @@ bool fetch_steam_cm_servers(std::vector<std::string>& endpoints, std::string& er
 
 void steam_cm_experiment() {
     consoleClear();
-    printf("ISAAC WORKSHOP NX 0.7 | Steam CM / LOGIN\n");
+    printf("ISAAC WORKSHOP NX 0.8 | Steam CM / DEPOT\n");
     printf("Solicitando servidores oficiales de Valve...\n");
     consoleUpdate(nullptr);
     std::vector<std::string> urls;
@@ -482,7 +488,7 @@ void steam_cm_experiment() {
 
 void display(const std::string& target, const std::vector<std::string>& list, size_t selected) {
     consoleClear();
-    printf("ISAAC WORKSHOP NX 0.7 EXP | Switch / Repentance\n");
+    printf("ISAAC WORKSHOP NX 0.8 EXP | Switch / Repentance\n");
     printf("=========================================\n");
     printf("Steam: buscar o consultar ID; ZIP: local\n\n");
     printf("Ruta activa:\n%.78s\n\n", target.empty() ? "NO ENCONTRADA" : target.c_str());
@@ -508,7 +514,7 @@ void display(const std::string& target, const std::vector<std::string>& list, si
 void display_search(const std::string& query,
                     const std::vector<isaacnx::WorkshopItem>& results, size_t selected) {
     consoleClear();
-    printf("ISAAC WORKSHOP NX 0.7 EXP | Busqueda Steam\n");
+    printf("ISAAC WORKSHOP NX 0.8 EXP | Busqueda Steam\n");
     printf("=========================================\n");
     printf("Buscando: %.62s\n", isaacnx::safe_console_text(query, 62).c_str());
     printf("[Arriba/Abajo] Elegir  [A] Detalles\n");
@@ -735,3 +741,4 @@ int main() {
     consoleExit(nullptr);
     return 0;
 }
+
