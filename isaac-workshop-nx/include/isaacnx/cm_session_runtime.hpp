@@ -22,5 +22,16 @@ bool cm_probe_token_depot_access(const std::string& wss_url,
                                  const std::string& access_token,
                                  uint32_t& depot_eresult,
                                  std::string& error);
+
+// Validates an individual Workshop manifest ID after depot authorization.
+// The Steam manifest request code is verified, then immediately forgotten;
+// the caller receives only EResult and never the short-lived code.
+bool cm_probe_token_manifest_access(const std::string& wss_url,
+                                    const std::string& account_name,
+                                    const std::string& access_token,
+                                    uint64_t manifest_id,
+                                    uint32_t& depot_eresult,
+                                    uint32_t& manifest_eresult,
+                                    std::string& error);
 }
 

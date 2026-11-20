@@ -163,7 +163,7 @@ void wipe_session_token(std::string& token) {
     token.clear();
 }
 
-void steam_qr_experiment(PadState* pad) {
+void steam_qr_experiment(PadState* pad, uint64_t manifest_id = 0) {
     consoleClear(); printf("Solicitando QR a Steam...\n"); consoleUpdate(nullptr);
     isaacnx::SteamQrChallenge challenge;
     std::string error;
@@ -213,15 +213,27 @@ void steam_qr_experiment(PadState* pad) {
         if (ok) {
             bool connected = false;
             uint32_t depot_result = 0;
+            uint32_t manifest_result = 0;
             for (size_t i = 0; i < urls.size() && i < 2; ++i) {
-                if (isaacnx::cm_probe_token_depot_access(urls[i], approved_account,
-                                                        approved_access_token,
-                                                        depot_result, error)) {
+                const bool tested = manifest_id
+                    ? isaacnx::cm_probe_token_manifest_access(
+                          urls[i], approved_account, approved_access_token,
+                          manifest_id, depot_result, manifest_result, error)
+                    : isaacnx::cm_probe_token_depot_access(
+                          urls[i], approved_account, approved_access_token,
+                          depot_result, error);
+                if (tested) {
                     connected = true;
                     break;
                 }
             }
-            if (connected && depot_result == 1)
+            if (connected && manifest_id && depot_result == 1 &&
+                manifest_result == 1)
+                message = "Steam: manifest autorizado! Falta bajar archivos del CDN.";
+            else if (connected && manifest_id && depot_result == 1)
+                message = "Steam: depot OK, manifest EResult " +
+                          std::to_string(manifest_result);
+            else if (connected && depot_result == 1)
                 message = "Steam CM: depot Workshop autorizado! Falta manifest/CDN.";
             else if (connected)
                 message = "Steam CM: login OK; depot denegado, EResult " +
@@ -465,7 +477,7 @@ bool fetch_steam_cm_servers(std::vector<std::string>& endpoints, std::string& er
 
 void steam_cm_experiment() {
     consoleClear();
-    printf("ISAAC WORKSHOP NX 0.8 | Steam CM / DEPOT\n");
+    printf("ISAAC WORKSHOP NX 0.9 | Steam CM / MANIFEST\n");
     printf("Solicitando servidores oficiales de Valve...\n");
     consoleUpdate(nullptr);
     std::vector<std::string> urls;
@@ -488,7 +500,7 @@ void steam_cm_experiment() {
 
 void display(const std::string& target, const std::vector<std::string>& list, size_t selected) {
     consoleClear();
-    printf("ISAAC WORKSHOP NX 0.8 EXP | Switch / Repentance\n");
+    printf("ISAAC WORKSHOP NX 0.9 EXP | Switch / Repentance\n");
     printf("=========================================\n");
     printf("Steam: buscar o consultar ID; ZIP: local\n\n");
     printf("Ruta activa:\n%.78s\n\n", target.empty() ? "NO ENCONTRADA" : target.c_str());
@@ -514,7 +526,7 @@ void display(const std::string& target, const std::vector<std::string>& list, si
 void display_search(const std::string& query,
                     const std::vector<isaacnx::WorkshopItem>& results, size_t selected) {
     consoleClear();
-    printf("ISAAC WORKSHOP NX 0.8 EXP | Busqueda Steam\n");
+    printf("ISAAC WORKSHOP NX 0.9 EXP | Busqueda Steam\n");
     printf("=========================================\n");
     printf("Buscando: %.62s\n", isaacnx::safe_console_text(query, 62).c_str());
     printf("[Arriba/Abajo] Elegir  [A] Detalles\n");
@@ -605,7 +617,8 @@ void show_workshop_details(PadState* pad, const std::string& target,
     printf("Descarga HTTPS publica: %s\n", item.download_url.empty() ? "no" : "si");
     printf("Manifest SteamPipe: %s\n\n", item.content_manifest_id ? "detectado (aun sin descarga)" : "no");
     printf("[A] %s\n", item.download_url.empty() ? "Ver estado" : "Descargar ZIP publico");
-    printf("[L] Bajar desde Android  [B] Volver\n");
+    printf("[L] Bajar desde Android  [-] Validar manifest Steam\n");
+    printf("[B] Volver\n");
     consoleUpdate(nullptr);
     while (appletMainLoop()) {
         padUpdate(pad);
@@ -617,6 +630,10 @@ void show_workshop_details(PadState* pad, const std::string& target,
         }
         if (keys & HidNpadButton_L) {
             install_from_bridge(pad, target, item);
+            return;
+        }
+        if ((keys & HidNpadButton_Minus) && item.content_manifest_id) {
+            steam_qr_experiment(pad, item.content_manifest_id);
             return;
         }
         svcSleepThread(16'000'000);

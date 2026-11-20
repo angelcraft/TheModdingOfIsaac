@@ -73,3 +73,32 @@ No authenticated Steam CM session, depot key, manifest request code, CDN chunks,
   decompress and checksum chunks. Only after integrity checks install via
   existing bounded staging, preserving previous mods. Do not silently
   fallback to unauthorized external mod mirrors.
+
+
+## 2026-11-20 - 0.9 Manifest code via authenticated Steam CM (source)
+
+- Added `cm_manifest_code.hpp/.cpp` Steam unified call
+  `ContentServerDirectory.GetManifestRequestCode#1` (EMsg 151) and
+  reply (147), with fixed64 job IDs, EResult in header tag 13,
+  and temporal request code in reply body tag 1. App/depot=250900,
+  manifest ID from `hcontent_file`.
+- QR from a Workshop item's detail screen now tests logon,
+  depot key access, and manifest authorization in a single
+  authenticated WSS session. Standalone [-] on home remains depot probe.
+- Never display or persist access tokens, depot keys, or manifest codes.
+  No file downloaded/installed via this path yet.
+- Offline tests: 46 Python, 20,000 malformed WebSocket frames,
+  20,000 malformed CM login messages, 20,000 CM Multi,
+  20,000 depot key messages, 20,000 manifest code messages.
+  Manifest and depot parser ASan+UBSan verified; session runtime
+  compiles locally with `-Werror`.
+- Actions has failed to start a usable host-tests job for v0.6/0.7/0.8
+  (4-second failures); GitHub logs API returns BlobNotFound.
+  Private repo browser cannot show job without signed-in session.
+  Ask Phylos for a screenshot of GitHub Actions failure details;
+  do not infer the fault from test source because exact source
+  `make host-test` passes locally.
+- Next technical milestone: `GetServersForSteamPipe`, HTTP manifest
+  CDN fetch using authorized code, decoding signed SteamPipe manifest
+  and encrypted filenames, content chunk download and integrity tests,
+  then atomic staging into Isaac mod path. Do not claim download works.

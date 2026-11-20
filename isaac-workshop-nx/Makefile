@@ -7,7 +7,7 @@ PORTLIBS := $(DEVKITPRO)/portlibs/switch
 
 SWITCH_CXX := $(DEVKITA64)/bin/aarch64-none-elf-g++
 SWITCH_CC := $(DEVKITA64)/bin/aarch64-none-elf-gcc
-SWITCH_OBJS := build/switch_main.o build/switch_core.o build/switch_zip.o build/switch_qr.o build/switch_cm_wire.o build/switch_ws_wire.o build/switch_cm_transport.o build/switch_cm_session_proto.o build/switch_cm_multi.o build/switch_cm_session_runtime.o build/switch_cm_depot.o
+SWITCH_OBJS := build/switch_main.o build/switch_core.o build/switch_zip.o build/switch_qr.o build/switch_cm_wire.o build/switch_ws_wire.o build/switch_cm_transport.o build/switch_cm_session_proto.o build/switch_cm_multi.o build/switch_cm_session_runtime.o build/switch_cm_depot.o build/switch_cm_manifest_code.o
 # Match the official switch-examples application template: NROs are PIEs.
 # The earlier -fPIC build failed the strict -z text relocation check; this
 # tests the official -fPIE code-generation setting without suppressing it.
@@ -51,6 +51,9 @@ build/switch_cm_session_runtime.o: source/cm_session_runtime.cpp | build
 build/switch_cm_depot.o: source/cm_depot.cpp | build
 	$(SWITCH_CXX) $(SWITCH_CXXFLAGS) -c $< -o $@
 
+build/switch_cm_manifest_code.o: source/cm_manifest_code.cpp | build
+	$(SWITCH_CXX) $(SWITCH_CXXFLAGS) -c $< -o $@
+
 build/switch_zip.o: source/zip_install.cpp | build
 	$(SWITCH_CXX) $(SWITCH_CXXFLAGS) -c $< -o $@
 
@@ -61,7 +64,7 @@ $(APP).elf: $(SWITCH_OBJS)
 	$(SWITCH_CXX) $(SWITCH_LDFLAGS) $^ -Wl,--start-group -lcurl -lz -lnx -Wl,--end-group -o $@
 
 $(APP).nacp:
-	$(DEVKITPRO)/tools/bin/nacptool --create "Isaac Workshop NX" "angelcraft / Phylos" "0.8.0" $@
+	$(DEVKITPRO)/tools/bin/nacptool --create "Isaac Workshop NX" "angelcraft / Phylos" "0.9.0" $@
 
 $(APP).nro: $(APP).elf $(APP).nacp
 	$(DEVKITPRO)/tools/bin/elf2nro $(APP).elf $@ --nacp=$(APP).nacp
@@ -80,8 +83,10 @@ host-test: | build
 	./build/cm_multi_test
 	g++ -std=c++17 -O2 -Wall -Wextra -Werror -Iinclude source/cm_wire.cpp source/cm_depot.cpp tests/cm_depot_test.cpp -o build/cm_depot_test
 	./build/cm_depot_test
+	g++ -std=c++17 -O2 -Wall -Wextra -Werror -Iinclude source/cm_wire.cpp source/cm_manifest_code.cpp tests/cm_manifest_code_test.cpp -o build/cm_manifest_code_test
+	./build/cm_manifest_code_test
 	python3 -m unittest discover -s tests -v
 
 clean:
-	rm -f $(APP).elf $(APP).nro $(APP).nacp build/switch_main.o build/switch_core.o build/switch_zip.o build/switch_qr.o build/switch_cm_wire.o build/switch_ws_wire.o build/switch_cm_transport.o build/switch_cm_session_proto.o build/switch_cm_multi.o build/switch_cm_session_runtime.o build/switch_cm_depot.o build/host_cli build/qr_smoke build/cm_wire_test build/ws_wire_test build/cm_session_proto_test build/cm_multi_test build/cm_depot_test
+	rm -f $(APP).elf $(APP).nro $(APP).nacp build/switch_main.o build/switch_core.o build/switch_zip.o build/switch_qr.o build/switch_cm_wire.o build/switch_ws_wire.o build/switch_cm_transport.o build/switch_cm_session_proto.o build/switch_cm_multi.o build/switch_cm_session_runtime.o build/switch_cm_depot.o build/switch_cm_manifest_code.o build/host_cli build/qr_smoke build/cm_wire_test build/ws_wire_test build/cm_session_proto_test build/cm_multi_test build/cm_depot_test build/cm_manifest_code_test
 

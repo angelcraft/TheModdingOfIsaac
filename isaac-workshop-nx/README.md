@@ -1,4 +1,4 @@
-# Isaac Workshop NX — 0.8 (Steam CM / depósito Workshop experimental)
+# Isaac Workshop NX — 0.9 (SteamPipe manifest experimental)
 
 Gestor independiente de mods de **The Binding of Isaac: Repentance** para
 Nintendo Switch con Atmosphère. Código fuente incluido, sin mods de terceros,
@@ -235,3 +235,26 @@ siendo el 0.5 de respaldo.
 Salida de la prueba con `[-]`: «depot Workshop autorizado» significa
 que Steam respondió EResult=1 a la petición de clave; un EResult distinto
 indica que no se obtuvo autorización. Ninguno indica que se descargó un mod.
+
+
+## 0.9 - Comprobar código de manifiesto de un mod
+
+Desde la ficha de un mod que tenga `hcontent_file`, pulsa `[-]`
+para mostrar un QR Steam Guard. Tras confirmar, la Switch hace
+**solo** estas comprobaciones, sin guardar claves:
+
+1. Acceder a Steam CM con el token temporal de QR.
+2. Pedir autorización del depósito Workshop 250900.
+3. Pedir a `ContentServerDirectory.GetManifestRequestCode#1` el código
+   de descarga del manifiesto de ese mod (EMsg 151/147, job correlacionado).
+
+El estado «manifest autorizado» indica que Steam devolvió un código
+temporal válido. **No significa que el mod esté descargado**: faltan
+descargar el manifiesto desde CDN, validar/desencriptar los archivos y
+descargar sus chunks. El código se descarta y la sesión se cierra.
+Los ZIP locales y el puente Android no se modifican.
+
+GitHub Actions vuelve a fallar antes de compilar el NRO, aunque
+las pruebas en host Linux pasan (46 pruebas Python, 4 baterías
+de 20.000 entradas malformadas de protocolo). Hasta que no se solucione
+el fallo de Actions no hay binario 0.9 listo para la Switch.
