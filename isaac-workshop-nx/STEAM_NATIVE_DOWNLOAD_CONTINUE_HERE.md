@@ -25,3 +25,16 @@ Version in progress: 0.5 diagnostic-only; not a native SteamPipe downloader yet.
 
 ## Caution
 A WSS handshake has not yet been tested on console. Connection success is not download success. Never print OAuth tokens, bearer headers, Steam cookies, manifest keys, or QR request IDs.
+
+## 2026-11-20 - 0.6 anonymous CM login probe
+
+Hardware report from Phylos: 0.5 connects and Steam accepts WebSocket.
+New branch-only, reversible 0.6 work:
+- Portable CMsgClientHello (EMsg 9805) and anonymous CMsgClientLogon (EMsg 5514) encoding.
+- Strict CMsgClientLogonResponse (751) parser, including heartbeat metadata.
+- RFC 6455 binary send/receive on the existing TLS socket, masking outbound frames and answering ping with pong; timeouts, fragmentation and size budgets.
+- Steam CM EMsg::Multi unpacking (gzip or raw) with bounds for recursion, output and frame count.
+- New Y diagnostic performs Hello, anonymous logon and reads Steam EResult, without touching files or requesting account credentials.
+- 40,000 malformed-frame fuzz cases, deterministic tests and local ASan/UBSan passed; GitHub Actions ARM64 still needs to be verified for this commit.
+
+No authenticated Steam CM session, depot key, manifest request code, CDN chunks, installation or direct Workshop download yet. Anonymous access may be insufficient for AppID 250900; Android anonymous DepotDownloader returned `App 250900 ... not available`. Do not claim mod downloading works or ask for Steam password. Next: actual user QR token handling in volatile memory, authorized CM logon, depot manifest + CDN client with AES/zlib and verified filesystem staging. Keep previous 0.5 NRO rollback artifact available.

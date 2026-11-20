@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cctype>
 #include <string>
+#include <vector>
 
 namespace isaacnx {
 namespace {
@@ -52,7 +53,7 @@ bool trusted_cm_endpoint(const std::string& wss, std::string& hostport) {
 bool wait_socket(CURL* curl, bool write, Deadline deadline) {
     curl_socket_t fd = CURL_SOCKET_BAD;
     if (curl_easy_getinfo(curl, CURLINFO_ACTIVESOCKET, &fd) != CURLE_OK ||
-        fd == CURL_SOCKET_BAD) return false;
+        fd == CURL_SOCKET_BAD || fd >= FD_SETSIZE) return false;
     while (Clock::now() < deadline) {
         fd_set fds;
         FD_ZERO(&fds);
@@ -84,7 +85,7 @@ bool send_all(CURL* curl, const std::string& request, Deadline deadline) {
 }
 
 bool receive_upgrade(CURL* curl, const std::string& key,
-                     Deadline deadline, std::string& error) {
+                     Deadline deadline, std::string& trailing, std::string& error) {
     std::string received;
     while (Clock::now() < deadline) {
         if (received.size() >= kMaxWsHttpHeader) {
@@ -104,7 +105,9 @@ bool receive_upgrade(CURL* curl, const std::string& key,
         received.append(buf, count);
         if (received.find("\r\n\r\n") != std::string::npos) {
             size_t consumed = 0;
-            return ws_validate_upgrade(received, key, consumed, error);
+            if (!ws_validate_upgrade(received, key, consumed, error)) return false;
+            trailing.assign(received.data() + consumed, received.size() - consumed);
+            return true;
         }
     }
     error = "Steam CM: tiempo agotado esperando HTTP 101";
@@ -113,7 +116,20 @@ bool receive_upgrade(CURL* curl, const std::string& key,
 
 } // namespace
 
-bool probe_steam_cm_ws(const std::string& wss_url, std::string& error) {
+CmWebSocket::~CmWebSocket() { close(); }
+
+void CmWebSocket::close() {
+    if (handle_) {
+        curl_easy_cleanup(static_cast<CURL*>(handle_));
+        handle_ = nullptr;
+    }
+    incoming_.clear();
+    fragmented_.clear();
+    binary_fragment_open_ = false;
+}
+
+bool CmWebSocket::connect(const std::string& wss_url, std::string& error) {
+    close();
     std::string hostport;
     if (!trusted_cm_endpoint(wss_url, hostport)) {
         error = "Steam CM: destino WSS fuera de Valve"; return false;
@@ -156,10 +172,125 @@ bool probe_steam_cm_ws(const std::string& wss_url, std::string& error) {
     const bool sent = send_all(curl, request, deadline);
     bool ok = false;
     if (!sent) error = "Steam CM: fallo al enviar Upgrade HTTPS";
-    else ok = receive_upgrade(curl, key, deadline, error);
-    curl_easy_cleanup(curl);
-    if (ok) error.clear();
+    else {
+        std::string trailing;
+        ok = receive_upgrade(curl, key, deadline, trailing, error);
+        if (ok) incoming_.assign(trailing.begin(), trailing.end());
+    }
+    if (ok) {
+        handle_ = curl;
+        error.clear();
+    } else curl_easy_cleanup(curl);
     return ok;
 }
 
+bool CmWebSocket::send_frame(uint8_t opcode,
+                             const std::vector<uint8_t>& payload,
+                             std::string& error) {
+    if (!handle_) { error = "Steam CM: WSS no conectado"; return false; }
+    uint8_t mask[4] {};
+    randomGet(mask, sizeof mask);
+    std::vector<uint8_t> data;
+    if (!ws_encode_client_frame(opcode, payload, mask, data, error)) return false;
+    const std::string raw(reinterpret_cast<const char*>(data.data()), data.size());
+    if (!send_all(static_cast<CURL*>(handle_), raw,
+                  Clock::now() + std::chrono::seconds(12))) {
+        error = "Steam CM: fallo enviando trama por TLS";
+        return false;
+    }
+    error.clear();
+    return true;
+}
+
+bool CmWebSocket::send_binary(const std::vector<uint8_t>& payload,
+                              std::string& error) {
+    return send_frame(2, payload, error);
+}
+
+bool CmWebSocket::recv_binary(std::vector<uint8_t>& payload,
+                              unsigned timeout_seconds, std::string& error) {
+    payload.clear();
+    if (!handle_) { error = "Steam CM: WSS no conectado"; return false; }
+    const Deadline deadline = Clock::now() +
+        std::chrono::seconds(std::min(timeout_seconds, 30u));
+    CURL* curl = static_cast<CURL*>(handle_);
+    while (Clock::now() < deadline) {
+        WsFrame frame;
+        size_t consumed = 0;
+        const WsParseResult parsed = ws_decode_server_frame(
+            incoming_.data(), incoming_.size(), frame, consumed, error);
+        if (parsed == WsParseResult::Invalid) return false;
+        if (parsed == WsParseResult::Ready) {
+            incoming_.erase(incoming_.begin(), incoming_.begin() + consumed);
+            if (frame.opcode == 9) {
+                if (!send_frame(10, frame.payload, error)) return false;
+                continue;
+            }
+            if (frame.opcode == 10) continue;
+            if (frame.opcode == 8) {
+                error = "Steam CM: servidor cerro WebSocket";
+                return false;
+            }
+            if (frame.opcode == 1) {
+                error = "Steam CM: trama de texto inesperada";
+                return false;
+            }
+            if (frame.opcode == 2) {
+                if (binary_fragment_open_) {
+                    error = "Steam CM: mensajes fragmentados solapados";
+                    return false;
+                }
+                if (frame.fin) {
+                    payload = std::move(frame.payload);
+                    error.clear();
+                    return true;
+                }
+                fragmented_ = std::move(frame.payload);
+                binary_fragment_open_ = true;
+            } else if (frame.opcode == 0) {
+                if (!binary_fragment_open_ ||
+                    frame.payload.size() > kMaxWsPayload - fragmented_.size()) {
+                    error = "Steam CM: fragmento WebSocket invalido";
+                    return false;
+                }
+                fragmented_.insert(fragmented_.end(),
+                                    frame.payload.begin(), frame.payload.end());
+                if (frame.fin) {
+                    payload = std::move(fragmented_);
+                    fragmented_.clear();
+                    binary_fragment_open_ = false;
+                    error.clear();
+                    return true;
+                }
+            }
+            continue;
+        }
+        if (incoming_.size() >= kMaxWsPayload + 14) {
+            error = "Steam CM: buffer WebSocket excesivo";
+            return false;
+        }
+        uint8_t buf[4096] {};
+        size_t n = 0;
+        const CURLcode rc = curl_easy_recv(curl, buf,
+            std::min(sizeof buf, kMaxWsPayload + 14 - incoming_.size()), &n);
+        if (rc == CURLE_AGAIN) {
+            if (!wait_socket(curl, false, deadline)) break;
+            continue;
+        }
+        if (rc != CURLE_OK || n == 0) {
+            error = "Steam CM: fallo recibiendo datos TLS";
+            return false;
+        }
+        incoming_.insert(incoming_.end(), buf, buf + n);
+    }
+    error = "Steam CM: sin mensajes antes del timeout";
+    return false;
+}
+
+bool probe_steam_cm_ws(const std::string& wss_url, std::string& error) {
+    CmWebSocket client;
+    return client.connect(wss_url, error);
+}
+
 } // namespace isaacnx
+

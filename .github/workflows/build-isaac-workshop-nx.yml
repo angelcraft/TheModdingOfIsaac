@@ -60,6 +60,6 @@ jobs:
           make
       - uses: actions/upload-artifact@v4
         with:
-          name: IsaacWorkshopNX-0.5-WSS-probe-NO-NATIVE-DOWNLOAD
+          name: IsaacWorkshopNX-0.6-CM-anonymous-login-NO-NATIVE-DOWNLOAD
           path: isaac-workshop-nx/IsaacWorkshopNX.nro
           if-no-files-found: error
